@@ -90,7 +90,7 @@ TRACE_EVENT(cluster_enter,
 	TP_ARGS(name, index, sync_cpus, child_cpus, from_idle),
 
 	TP_STRUCT__entry(
-		__field(const char *, name)
+		__string(       name,           name            )
 		__field(int, index)
 		__field(unsigned long, sync_cpus)
 		__field(unsigned long, child_cpus)
@@ -98,7 +98,7 @@ TRACE_EVENT(cluster_enter,
 	),
 
 	TP_fast_assign(
-		__entry->name = name;
+		__assign_str(name, name);
 		__entry->index = index;
 		__entry->sync_cpus = sync_cpus;
 		__entry->child_cpus = child_cpus;
@@ -106,7 +106,7 @@ TRACE_EVENT(cluster_enter,
 	),
 
 	TP_printk("cluster_name:%s idx:%d sync:0x%lx child:0x%lx idle:%d",
-		__entry->name,
+		__get_str(name),
 		__entry->index,
 		__entry->sync_cpus,
 		__entry->child_cpus,
@@ -121,7 +121,7 @@ TRACE_EVENT(cluster_exit,
 	TP_ARGS(name, index, sync_cpus, child_cpus, from_idle),
 
 	TP_STRUCT__entry(
-		__field(const char *, name)
+		__string(       name,           name            )
 		__field(int, index)
 		__field(unsigned long, sync_cpus)
 		__field(unsigned long, child_cpus)
@@ -129,7 +129,7 @@ TRACE_EVENT(cluster_exit,
 	),
 
 	TP_fast_assign(
-		__entry->name = name;
+		__assign_str(name, name);
 		__entry->index = index;
 		__entry->sync_cpus = sync_cpus;
 		__entry->child_cpus = child_cpus;
@@ -137,7 +137,7 @@ TRACE_EVENT(cluster_exit,
 	),
 
 	TP_printk("cluster_name:%s idx:%d sync:0x%lx child:0x%lx idle:%d",
-		__entry->name,
+		__get_str(name),
 		__entry->index,
 		__entry->sync_cpus,
 		__entry->child_cpus,

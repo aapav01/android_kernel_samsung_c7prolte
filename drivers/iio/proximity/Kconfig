@@ -16,4 +16,18 @@ config AS3935
 	  To compile this driver as a module, choose M here: the
 	  module will be called as3935
 
+config SENSORS_STK3013_IIO
+	depends on I2C
+	tristate "STK3013 driver"
+	default n
+	help
+	   This option enables proximity sensors using STK3013 driver.
+
+config SENSORS_CM36672P_IIO
+	depends on I2C
+	tristate "CM36672P driver"
+	default n
+	help
+	  This option enables proximity sensor using CM36672P driver.
+
 endmenu

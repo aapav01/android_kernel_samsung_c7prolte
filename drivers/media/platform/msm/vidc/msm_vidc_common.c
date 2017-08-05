@@ -1928,7 +1928,8 @@ static void handle_fbd(enum hal_command_response cmd, void *data)
 				vb->v4l2_planes[0].bytesused,
 				vb->v4l2_planes[0].length);
 		if (!(fill_buf_done->flags1 &
-			HAL_BUFFERFLAG_TIMESTAMPINVALID)) {
+			HAL_BUFFERFLAG_TIMESTAMPINVALID) &&
+			fill_buf_done->filled_len1) {
 			time_usec = fill_buf_done->timestamp_hi;
 			time_usec = (time_usec << 32) |
 				fill_buf_done->timestamp_lo;
@@ -2681,9 +2682,11 @@ static int msm_vidc_load_resources(int flipped_state,
 		dprintk(VIDC_ERR, "HW is overloaded, needed: %d max: %d\n",
 			num_mbs_per_sec, max_load_adj);
 		msm_vidc_print_running_insts(core);
+#if 0 /* Samsung skips the overloaded error return  */
 		inst->state = MSM_VIDC_CORE_INVALID;
 		msm_comm_kill_session(inst);
 		return -EBUSY;
+#endif
 	}
 
 	hdev = core->device;
@@ -4653,7 +4656,9 @@ static int msm_vidc_load_supported(struct msm_vidc_inst *inst)
 				num_mbs_per_sec,
 				max_load_adj);
 			msm_vidc_print_running_insts(inst->core);
+#if 0 /* Samsung skips the overloaded error return  */
 			return -EBUSY;
+#endif
 		}
 	}
 	return 0;

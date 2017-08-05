@@ -52,6 +52,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_CS4270 if I2C
 	select SND_SOC_CS4271 if SND_SOC_I2C_AND_SPI
 	select SND_SOC_CS42XX8_I2C if I2C
+	select SND_SOC_CS47L15 if MFD_CS47L15
 	select SND_SOC_CX20442 if TTY
 	select SND_SOC_DA7210 if I2C
 	select SND_SOC_DA7213 if I2C
@@ -86,6 +87,8 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_RT5651 if I2C
 	select SND_SOC_RT5670 if I2C
 	select SND_SOC_RT5677 if I2C
+	select SND_SOC_RT5659 if I2C
+	select SND_SOC_RT5665 if I2C
 	select SND_SOC_SGTL5000 if I2C
 	select SND_SOC_SI476X if MFD_SI476X_CORE
 	select SND_SOC_SIRF_AUDIO_CODEC
@@ -194,9 +197,11 @@ config SND_SOC_WM_HUBS
 
 config SND_SOC_WM_ADSP
 	tristate
+	default y if SND_SOC_MADERA=y
 	default y if SND_SOC_WM5102=y
 	default y if SND_SOC_WM5110=y
 	default y if SND_SOC_WM2200=y
+	default m if SND_SOC_MADERA=m
 	default m if SND_SOC_WM5102=m
 	default m if SND_SOC_WM5110=m
 	default m if SND_SOC_WM2200=m
@@ -382,6 +387,9 @@ config SND_SOC_CS42XX8_I2C
 	select SND_SOC_CS42XX8
 	select REGMAP_I2C
 
+config SND_SOC_CS47L15
+	tristate
+
 config SND_SOC_CX20442
 	tristate
 	depends on TTY
@@ -431,6 +439,17 @@ config SND_SOC_ISABELLE
 config SND_SOC_LM49453
 	tristate
 
+config SND_SOC_MADERA
+	tristate
+	default y if SND_SOC_CS47L15=y
+	default y if SND_SOC_CS47L35=y
+	default y if SND_SOC_CS47L85=y
+	default y if SND_SOC_CS47L90=y
+	default m if SND_SOC_CS47L15=m
+	default m if SND_SOC_CS47L35=m
+	default m if SND_SOC_CS47L85=m
+	default m if SND_SOC_CS47L90=m
+
 config SND_SOC_MAX98088
        tristate
 
@@ -476,6 +495,7 @@ config SND_SOC_RL6231
 	default y if SND_SOC_RT5651=y
 	default y if SND_SOC_RT5670=y
 	default y if SND_SOC_RT5677=y
+	default y if SND_SOC_RT5665=y
 	default m if SND_SOC_RT5640=m
 	default m if SND_SOC_RT5645=m
 	default m if SND_SOC_RT5651=m
@@ -502,6 +522,12 @@ config SND_SOC_RT5670
 	tristate
 
 config SND_SOC_RT5677
+	tristate
+
+config SND_SOC_RT5659
+	tristate
+	
+config SND_SOC_RT5665
 	tristate
 
 #Freescale sgtl5000 codec
@@ -664,7 +690,7 @@ config AUDIO_EXT_CLK
 
 config SND_SOC_WCD_MBHC
 	tristate
-	default y if (SND_SOC_MSM8909_WCD=y || SND_SOC_MSM8X16_WCD=y || SND_SOC_WCD9335=y) && SND_SOC_MDMCALIFORNIUM!=y
+	default y if (SND_SOC_MSM8909_WCD=y || SND_SOC_WCD9335=y) && SND_SOC_MDMCALIFORNIUM!=y
 
 config SND_SOC_WL1273
 	tristate

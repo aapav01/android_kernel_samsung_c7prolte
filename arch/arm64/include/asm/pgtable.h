@@ -69,7 +69,6 @@ extern void __pgd_error(const char *file, int line, unsigned long val);
 #define PROT_SECT_DEFAULT	(PMD_TYPE_SECT | PMD_SECT_AF)
 #endif
 
-#define PROT_DEVICE_nGnRnE	(PROT_DEFAULT | PTE_PXN | PTE_UXN | PTE_ATTRINDX(MT_DEVICE_nGnRnE))
 #define PROT_DEVICE_nGnRE	(PROT_DEFAULT | PTE_PXN | PTE_UXN | PTE_ATTRINDX(MT_DEVICE_nGnRE))
 #define PROT_NORMAL_NC		(PROT_DEFAULT | PTE_PXN | PTE_UXN | PTE_ATTRINDX(MT_NORMAL_NC))
 #define PROT_NORMAL		(PROT_DEFAULT | PTE_PXN | PTE_UXN | PTE_ATTRINDX(MT_NORMAL))
@@ -203,6 +202,16 @@ static inline pte_t pte_mkspecial(pte_t pte)
 {
 	return set_pte_bit(pte, __pgprot(PTE_SPECIAL));
 }
+
+#ifdef CONFIG_TIMA_LKMAUTH
+#ifdef CONFIG_TIMA_LKMAUTH_CODE_PROT
+static inline pte_t pte_mknexec(pte_t pte)
+{
+	pte_val(pte) |= PTE_PXN;
+	return pte;
+}
+#endif
+#endif
 
 static inline void set_pte(pte_t *ptep, pte_t pte)
 {

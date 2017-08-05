@@ -59,6 +59,10 @@
 
 #include "mdss_mdp_trace.h"
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+#include "samsung/ss_dsi_panel_common.h"
+#endif
+
 #define AXI_HALT_TIMEOUT_US	0x4000
 #define AUTOSUSPEND_TIMEOUT_MS	200
 #define DEFAULT_MDP_PIPE_WIDTH	2048
@@ -103,7 +107,8 @@ static struct mdss_panel_intf pan_types[] = {
 	{"edp", MDSS_PANEL_INTF_EDP},
 	{"hdmi", MDSS_PANEL_INTF_HDMI},
 };
-static char mdss_mdp_panel[MDSS_MAX_PANEL_LEN];
+
+char mdss_mdp_panel[MDSS_MAX_PANEL_LEN];
 
 struct mdss_hw mdss_mdp_hw = {
 	.hw_ndx = MDSS_HW_MDP,
@@ -903,7 +908,7 @@ static int mdss_bus_rt_bw_vote(bool enable)
 	int rc = 0;
 	bool changed = false;
 
-	if (!mdata->hw_rt_bus_hdl)
+	if (!mdata->hw_rt_bus_hdl || mdata->handoff_pending)
 		return 0;
 
 	if (enable) {
@@ -1429,9 +1434,9 @@ static int mdss_mdp_debug_init(struct platform_device *pdev,
 	mdss_debug_register_dump_range(pdev, dbg_blk, "qcom,regs-dump-mdp",
 		"qcom,regs-dump-names-mdp");
 
-	if (mdata->vbif_io.base)
+	if(mdata->vbif_io.base)
 		mdss_debug_register_io("vbif", &mdata->vbif_io, NULL);
-	if (mdata->vbif_nrt_io.base)
+	if(mdata->vbif_nrt_io.base)
 		mdss_debug_register_io("vbif_nrt", &mdata->vbif_nrt_io, NULL);
 
 	return 0;
@@ -1875,7 +1880,7 @@ static int mdss_mdp_get_pan_cfg(struct mdss_panel_cfg *pan_cfg)
 	/* point to the start of panel name */
 	t = t + 1;
 	strlcpy(&pan_cfg->arg_cfg[0], t, sizeof(pan_cfg->arg_cfg));
-	pr_debug("%d: t=[%s] panel name=[%s]\n", __LINE__,
+	pr_info("%d: t=[%s] panel name=[%s]\n", __LINE__,
 		t, pan_cfg->arg_cfg);
 
 	panel_len = strlen(pan_cfg->arg_cfg);
@@ -2413,6 +2418,10 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 	if (!display_on)
 		mdss_mdp_footswitch_ctrl_splash(false);
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	if (!mdss_panel_attached(DISPLAY_1) && !mdss_panel_attached(DISPLAY_2))
+		mdata->handoff_pending = false;
+#endif
 	pr_info("mdss version = 0x%x, bootloader display is %s\n",
 		mdata->mdp_rev, display_on ? "on" : "off");
 
@@ -2951,7 +2960,6 @@ static int mdss_mdp_parse_dt_pipe_helper(struct platform_device *pdev,
 parse_fail:
 	kfree(mdata->cursor_pipes);
 cursor_alloc_fail:
-	kfree(mdata->cursor_pipes);
 dma_alloc_fail:
 	kfree(mdata->rgb_pipes);
 rgb_alloc_fail:

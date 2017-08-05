@@ -2617,7 +2617,7 @@ int mdss_mdp_pp_resume(struct msm_fb_data_type *mfd)
 			mfd->index);
 		return 0;
 	} else if (ret || !ad) {
-		pr_err("Failed to get ad info: ret = %d, ad = 0x%pK\n",
+		pr_err("Failed to get ad info: ret = %d, ad = 0x%pK.\n",
 			ret, ad);
 		return ret;
 	}
@@ -5430,7 +5430,7 @@ static int pp_ad_invalidate_input(struct msm_fb_data_type *mfd)
 			mfd->index);
 		return 0;
 	} else if (ret || !ad) {
-		pr_err("Failed to get ad info: ret = %d, ad = 0x%pK\n",
+		pr_err("Failed to get ad info: ret = %d, ad = 0x%pK.\n",
 			ret, ad);
 		return ret;
 	}
@@ -5465,7 +5465,7 @@ int mdss_mdp_ad_config(struct msm_fb_data_type *mfd,
 			mfd->index);
 		return ret;
 	} else if (ret || !ad) {
-		pr_err("Failed to get ad info: ret = %d, ad = 0x%pK\n",
+		pr_err("Failed to get ad info: ret = %d, ad = 0x%pK.\n",
 			ret, ad);
 		return ret;
 	}
@@ -5582,7 +5582,7 @@ int mdss_mdp_ad_input(struct msm_fb_data_type *mfd,
 			mfd->index);
 		return ret;
 	} else if (ret || !ad) {
-		pr_err("Failed to get ad info: ret = %d, ad = 0x%pK\n",
+		pr_err("Failed to get ad info: ret = %d, ad = 0x%pK.\n",
 			ret, ad);
 		return ret;
 	}
@@ -5949,7 +5949,7 @@ static int mdss_mdp_ad_ipc_reset(struct msm_fb_data_type *mfd)
 			mfd->index);
 		return 0;
 	} else if (ret || !ad) {
-		pr_err("Failed to get ad info: ret = %d, ad = 0x%pK\n",
+		pr_err("Failed to get ad info: ret = %d, ad = 0x%pK.\n",
 			ret, ad);
 		return ret;
 	}
@@ -5990,7 +5990,7 @@ static int mdss_mdp_ad_setup(struct msm_fb_data_type *mfd)
 			mfd->index);
 		return 0;
 	} else if (ret || !ad) {
-		pr_err("Failed to get ad info: ret = %d, ad = 0x%pK\n",
+		pr_err("Failed to get ad info: ret = %d, ad = 0x%pK.\n",
 			ret, ad);
 		return ret;
 	}

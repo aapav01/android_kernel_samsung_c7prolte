@@ -306,13 +306,13 @@ static void cam_smmu_check_vaddr_in_range(int idx, void *vaddr)
 		end_addr = (unsigned long)mapping->paddr + mapping->len;
 
 		if (start_addr <= current_addr && current_addr < end_addr) {
-			pr_err("Error: va %pK is valid: range:%pK-%pK, fd = %d cb: %s\n",
+			pr_err("Error: va %pK is valid: range:%p-%p, fd = %d cb: %s\n",
 				vaddr, (void *)start_addr, (void *)end_addr,
 				mapping->ion_fd,
 				iommu_cb_set.cb_info[idx].name);
 			return;
 		} else {
-			CDBG("va %pK is not in this range: %pK-%pK, fd = %d\n",
+			CDBG("va %pK is not in this range: %p-%p, fd = %d\n",
 				vaddr, (void *)start_addr, (void *)end_addr,
 				mapping->ion_fd);
 		}
@@ -764,12 +764,6 @@ static int cam_smmu_map_buffer_and_add_to_list(int idx, int ion_fd,
 	struct dma_buf_attachment *attach = NULL;
 	struct sg_table *table = NULL;
 
-	if (!paddr_ptr) {
-		pr_err("Error: Input pointer invalid\n");
-		rc = -EINVAL;
-		goto err_out;
-	}
-
 	/* allocate memory for each buffer information */
 	buf = dma_buf_get(ion_fd);
 	if (IS_ERR_OR_NULL(buf)) {
@@ -794,9 +788,8 @@ static int cam_smmu_map_buffer_and_add_to_list(int idx, int ion_fd,
 
 	rc = msm_dma_map_sg_lazy(iommu_cb_set.cb_info[idx].dev, table->sgl,
 			table->nents, dma_dir, buf);
-	if (rc != table->nents) {
+	if (!rc) {
 		pr_err("Error: msm_dma_map_sg_lazy failed\n");
-		rc = -ENOMEM;
 		goto err_unmap_sg;
 	}
 
@@ -834,7 +827,7 @@ static int cam_smmu_map_buffer_and_add_to_list(int idx, int ion_fd,
 	*paddr_ptr = sg_dma_address(table->sgl);
 	*len_ptr = (size_t)sg_dma_len(table->sgl);
 
-	if (!*paddr_ptr || !*len_ptr) {
+	if (!paddr_ptr) {
 		pr_err("Error: Space Allocation failed!\n");
 		rc = -ENOSPC;
 		goto err_unmap_sg;
@@ -1094,7 +1087,7 @@ static int cam_smmu_free_scratch_buffer_remove_from_list(
 		&iommu_cb_set.cb_info[idx].scratch_map;
 
 	if (!mapping_info->table) {
-		pr_err("Error: Invalid params: dev = %pK, table = %pK, ",
+		pr_err("Error: Invalid params: dev = %pK, table = %p, ",
 				(void *)iommu_cb_set.cb_info[idx].dev,
 				(void *)mapping_info->table);
 		return -EINVAL;

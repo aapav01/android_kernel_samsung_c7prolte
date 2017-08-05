@@ -776,7 +776,7 @@ int mdss_dsi_clk_req_state(void *client, enum mdss_dsi_clk_type clk,
 					changed = true;
 					c->core_clk_state = MDSS_DSI_CLK_OFF;
 				} else {
-					pr_warn("Core refcount is zero for %s",
+					pr_warn("Core refcount is zero for %s\n",
 						c->name);
 				}
 			} else {
@@ -795,7 +795,7 @@ int mdss_dsi_clk_req_state(void *client, enum mdss_dsi_clk_type clk,
 					changed = true;
 					c->link_clk_state = MDSS_DSI_CLK_OFF;
 				} else {
-					pr_warn("Link refcount is zero for %s",
+					pr_warn("Link refcount is zero for %s\n",
 						c->name);
 				}
 			} else {

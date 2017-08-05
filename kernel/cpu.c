@@ -482,6 +482,8 @@ static int _cpu_up(unsigned int cpu, int tasks_frozen)
 		ret = PTR_ERR(idle);
 		goto out;
 	}
+	
+	restore_pcpu_tick(cpu);
 
 	ret = smpboot_create_threads(cpu);
 	if (ret)

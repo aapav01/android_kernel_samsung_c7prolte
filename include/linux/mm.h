@@ -101,6 +101,12 @@ extern struct rw_semaphore nommu_region_sem;
 extern unsigned int kobjsize(const void *objp);
 #endif
 
+#ifdef CONFIG_ZSWAP
+extern int sysctl_zswap_compact;
+extern int sysctl_zswap_compaction_handler(struct ctl_table *table, int write,
+			void __user *buffer, size_t *length, loff_t *ppos);
+#endif
+
 /*
  * vm_flags in vm_area_struct, see mm_types.h.
  */
@@ -188,11 +194,6 @@ extern unsigned int kobjsize(const void *objp);
 /* This mask defines which mm->def_flags a process can inherit its parent */
 #define VM_INIT_DEF_MASK	VM_NOHUGEPAGE
 
-#ifdef CONFIG_ARCH_MSM8953_SOC_SETTINGS
-#define MSM8953_TLMM_START_ADDR	0x01000000
-#define MSM8953_TLMM_END_ADDR	(0x01300000 - 1)
-#endif
-
 /*
  * mapping from the currently active vm_flags protection bits (the
  * low four bits) to a page protection mask..
@@ -235,7 +236,7 @@ struct vm_fault {
 /*
  * These are the virtual MM functions - opening of an area, closing and
  * unmapping it (needed to keep files on disk up-to-date etc), pointer
- * to the functions called when a no-page or a wp-page exception occurs.
+ * to the functions called when a no-page or a wp-page exception occurs. 
  */
 struct vm_operations_struct {
 	void (*open)(struct vm_area_struct * area);
@@ -1929,7 +1930,7 @@ int write_one_page(struct page *page, int wait);
 void task_dirty_inc(struct task_struct *tsk);
 
 /* readahead.c */
-#define VM_MAX_READAHEAD	512	/* kbytes */
+#define VM_MAX_READAHEAD	128	/* kbytes */
 #define VM_MIN_READAHEAD	16	/* kbytes (includes current page) */
 
 int force_page_cache_readahead(struct address_space *mapping, struct file *filp,
@@ -2050,6 +2051,7 @@ static inline struct page *follow_page(struct vm_area_struct *vma,
 #define FOLL_MIGRATION	0x400	/* wait for page to replace migration entry */
 #define FOLL_TRIED	0x800	/* a retry, previous pass started an IO */
 #define FOLL_COW	0x4000	/* internal GUP flag */
+#define FOLL_CMA	0x80000	/* migrate if the page is from cma pageblock */
 
 typedef int (*pte_fn_t)(pte_t *pte, pgtable_t token, unsigned long addr,
 			void *data);

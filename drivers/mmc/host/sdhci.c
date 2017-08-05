@@ -101,6 +101,11 @@ static void sdhci_dump_state(struct sdhci_host *host)
 		mmc_hostname(mmc), mmc->parent->power.runtime_status,
 		atomic_read(&mmc->parent->power.usage_count),
 		mmc->parent->power.disable_depth);
+        if (mmc->card) {
+		pr_info("%s: card->cid : %08x%08x%08x%08x\n", mmc_hostname(mmc), 
+				mmc->card->raw_cid[0], mmc->card->raw_cid[1], 
+				mmc->card->raw_cid[2], mmc->card->raw_cid[3]);
+	}
 }
 
 static void sdhci_dumpregs(struct sdhci_host *host)
@@ -166,8 +171,6 @@ static void sdhci_dumpregs(struct sdhci_host *host)
 		host->ops->dump_vendor_regs(host);
 	sdhci_dump_state(host);
 	pr_info(DRIVER_NAME ": ===========================================\n");
-	if (host->slot_no == 1)
-		BUG_ON(1);
 }
 
 /*****************************************************************************\
@@ -2839,6 +2842,11 @@ static void sdhci_cmd_irq(struct sdhci_host *host, u32 intmask, u32 *mask)
 			host->cmd->error = -ETIMEDOUT;
 		else if (auto_cmd_status & SDHCI_AUTO_CMD_CRC_ERR)
 			host->cmd->error = -EILSEQ;
+		if (host->mmc && host->mmc->card) {
+			pr_info("%s: card->cid : %08x%08x%08x%08x\n", mmc_hostname(host->mmc), 
+					host->mmc->card->raw_cid[0], host->mmc->card->raw_cid[1], 
+					host->mmc->card->raw_cid[2], host->mmc->card->raw_cid[3]);
+		}
 	}
 
 	if (host->cmd->error) {
@@ -2994,8 +3002,7 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 			host->ops->adma_workaround(host, intmask);
 	}
 	if (host->data->error) {
-		if (intmask & (SDHCI_INT_DATA_CRC | SDHCI_INT_DATA_TIMEOUT
-					| SDHCI_INT_DATA_END_BIT)) {
+		if (intmask & (SDHCI_INT_DATA_CRC | SDHCI_INT_DATA_TIMEOUT)) {
 			command = SDHCI_GET_CMD(sdhci_readw(host,
 							    SDHCI_COMMAND));
 			if ((command != MMC_SEND_TUNING_BLOCK_HS200) &&
@@ -4000,12 +4007,13 @@ int sdhci_add_host(struct sdhci_host *host)
 	 * Enable polling on when card detection is broken and no card detect
 	 * gpio is present.
 	 */
+#ifndef CONFIG_NO_DETECT_PIN
 	if ((host->quirks & SDHCI_QUIRK_BROKEN_CARD_DETECTION) &&
 	    !(mmc->caps & MMC_CAP_NONREMOVABLE) &&
 	    (mmc_gpio_get_cd(host->mmc) < 0) &&
 	    !(mmc->caps2 & MMC_CAP2_NONHOTPLUG))
 		mmc->caps |= MMC_CAP_NEEDS_POLL;
-
+#endif
 	/* If there are external regulators, get them */
 	if (mmc_regulator_get_supply(mmc) == -EPROBE_DEFER)
 		return -EPROBE_DEFER;

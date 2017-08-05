@@ -1291,6 +1291,11 @@ static int soc_camera_probe_finish(struct soc_camera_device *icd)
 	struct v4l2_mbus_framefmt mf;
 	int ret;
 
+	if (!sd){
+		ret = -ENODEV;
+		return ret;
+	}
+	
 	sd->grp_id = soc_camera_grp_id(icd);
 	v4l2_set_subdev_hostdata(sd, icd);
 
@@ -1418,6 +1423,9 @@ static void soc_camera_i2c_free(struct soc_camera_device *icd)
 
 	icd->control = NULL;
 	if (icd->sasc)
+		return;
+
+	if(!client)
 		return;
 
 	adap = client->adapter;

@@ -905,7 +905,7 @@ int mdss_mdp_perf_calc_pipe(struct mdss_mdp_pipe *pipe,
 	prefill_params.is_hflip = pipe->flags & MDP_FLIP_LR;
 	prefill_params.is_cmd = !mixer->ctl->is_video_mode;
 	prefill_params.pnum = pipe->num;
-	prefill_params.is_ubwc = mdss_mdp_is_ubwc_format(pipe->src_fmt);
+	prefill_params.is_bwc = mdss_mdp_is_ubwc_format(pipe->src_fmt);
 	prefill_params.is_nv12 = mdss_mdp_is_nv12_format(pipe->src_fmt);
 
 	mdss_mdp_get_bw_vote_mode(mixer, mdata->mdp_rev, perf,
@@ -3278,10 +3278,27 @@ int mdss_mdp_ctl_reconfig(struct mdss_mdp_ctl *ctl,
 skip_intf_reconfig:
 	ctl->width = get_panel_xres(&pdata->panel_info);
 	ctl->height = get_panel_yres(&pdata->panel_info);
-	if (ctl->mixer_left) {
-		ctl->mixer_left->width = ctl->width;
-		ctl->mixer_left->height = ctl->height;
+	if (ctl->mfd->split_mode == MDP_DUAL_LM_SINGLE_DISPLAY) {
+		if (ctl->mixer_left) {
+			ctl->mixer_left->width = ctl->width / 2;
+			ctl->mixer_left->height = ctl->height;
+		}
+		if (ctl->mixer_right) {
+			ctl->mixer_right->width = ctl->width / 2;
+			ctl->mixer_right->height = ctl->height;
+		}
+	} else {
+		/*
+		 * Handles MDP_SPLIT_MODE_NONE, MDP_DUAL_LM_DUAL_DISPLAY and
+		 * MDP_PINGPONG_SPLIT case.
+		 */
+		if (ctl->mixer_left) {
+			ctl->mixer_left->width = ctl->width;
+			ctl->mixer_left->height = ctl->height;
+		}
 	}
+	ctl->roi = (struct mdss_rect) {0, 0, ctl->width, ctl->height};
+	
 	ctl->border_x_off = pdata->panel_info.lcdc.border_left;
 	ctl->border_y_off = pdata->panel_info.lcdc.border_top;
 
@@ -3612,7 +3629,13 @@ static void mdss_mdp_ctl_restore_sub(struct mdss_mdp_ctl *ctl)
 		mdss_mdp_pp_resume(ctl->mfd);
 
 		if (is_dsc_compression(&ctl->panel_data->panel_info)) {
-			mdss_mdp_ctl_dsc_setup(ctl,
+			/*
+			 * Avoid redundant call to dsc_setup when mode switch
+			 * is in progress. During the switch, dsc_setup is
+			 * handled in mdss_mode_switch() function.
+			 */
+			if (ctl->pending_mode_switch != SWITCH_RESOLUTION)
+				mdss_mdp_ctl_dsc_setup(ctl,			
 					&ctl->panel_data->panel_info);
 		} else if (ctl->panel_data->panel_info.compression_mode ==
 				COMPRESSION_FBC) {
@@ -4047,16 +4070,16 @@ void mdss_mdp_set_roi(struct mdss_mdp_ctl *ctl,
 	}
 
 	previous_frame_pu_type = mdss_mdp_get_pu_type(ctl);
-	if (ctl->mixer_left) {
-		mdss_mdp_set_mixer_roi(ctl->mixer_left, l_roi);
+	mdss_mdp_set_mixer_roi(ctl->mixer_left, l_roi);
+	if (ctl->mixer_left)
 		ctl->roi = ctl->mixer_left->roi;
-	}
 
 	if (ctl->mfd->split_mode == MDP_DUAL_LM_DUAL_DISPLAY) {
 		struct mdss_mdp_ctl *sctl = mdss_mdp_get_split_ctl(ctl);
 
-		if (sctl && sctl->mixer_left) {
-				mdss_mdp_set_mixer_roi(sctl->mixer_left, r_roi);
+		if (sctl) {
+			mdss_mdp_set_mixer_roi(sctl->mixer_left, r_roi);
+			if (sctl->mixer_left)
 				sctl->roi = sctl->mixer_left->roi;
 		}
 	} else if (is_dual_lm_single_display(ctl->mfd) && ctl->mixer_right) {
@@ -5138,7 +5161,8 @@ int mdss_mdp_display_commit(struct mdss_mdp_ctl *ctl, void *arg,
 	 * that are valid and driver needs to ensure it. This function
 	 * would set the mixer state to border when there is timeout.
 	 */
-	if (ret == NOTIFY_BAD) {
+	/* check First frame of Secure display (RGB and FB0) to avoid to be flushed (W/A of distorted image on SSPAY) */
+	if (ret == NOTIFY_BAD||((ctl->mfd)&&ctl->mfd->sd_skiplayer)) {
 		mdss_mdp_force_border_color(ctl);
 		ctl_flush_bits |= (ctl->flush_bits | BIT(17));
 		if (sctl && (!ctl->split_flush_en))

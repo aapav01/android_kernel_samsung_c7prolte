@@ -50,6 +50,12 @@
 #include "sd_ops.h"
 #include "sdio_ops.h"
 
+#ifdef CONFIG_MMC_SUPPORT_STLOG
+#include <linux/stlog.h>
+#else
+#define ST_LOG(fmt,...)
+#endif
+
 /* If the device is not responding */
 #define MMC_CORE_TIMEOUT_MS	(10 * 60 * 1000) /* 10 minute timeout */
 
@@ -1168,7 +1174,7 @@ int mmc_set_auto_bkops(struct mmc_card *card, bool enable)
 			mmc_update_bkops_auto_off(&card->bkops.stats);
 		}
 		card->ext_csd.bkops_en = bkops_en;
-		pr_debug("%s: %s: bkops state %x\n",
+		pr_info("%s: %s: bkops state %x\n",
 				mmc_hostname(card->host), __func__, bkops_en);
 	}
 out:
@@ -1640,10 +1646,6 @@ EXPORT_SYMBOL(mmc_start_req);
  */
 void mmc_wait_for_req(struct mmc_host *host, struct mmc_request *mrq)
 {
-#ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
-	if (mmc_bus_needs_resume(host))
-		mmc_resume_bus(host);
-#endif
 	__mmc_start_req(host, mrq);
 	mmc_wait_for_req_done(host, mrq);
 }
@@ -1804,13 +1806,8 @@ int mmc_read_bkops_status(struct mmc_card *card)
 	if (err)
 		goto out;
 
-	card->ext_csd.raw_bkops_status = ext_csd[EXT_CSD_BKOPS_STATUS] &
-		MMC_BKOPS_URGENCY_MASK;
-	card->ext_csd.raw_exception_status =
-		ext_csd[EXT_CSD_EXP_EVENTS_STATUS] & (EXT_CSD_URGENT_BKOPS |
-						      EXT_CSD_DYNCAP_NEEDED |
-						      EXT_CSD_SYSPOOL_EXHAUSTED
-						      | EXT_CSD_PACKED_FAILURE);
+	card->ext_csd.raw_bkops_status = ext_csd[EXT_CSD_BKOPS_STATUS];
+	card->ext_csd.raw_exception_status = ext_csd[EXT_CSD_EXP_EVENTS_STATUS];
 out:
 	kfree(ext_csd);
 	return err;
@@ -2777,6 +2774,7 @@ int mmc_resume_bus(struct mmc_host *host)
 	pr_debug("%s: Starting deferred resume\n", mmc_hostname(host));
 	spin_lock_irqsave(&host->lock, flags);
 	host->bus_resume_flags &= ~MMC_BUSRESUME_NEEDS_RESUME;
+	host->rescan_disable = 0;
 	spin_unlock_irqrestore(&host->lock, flags);
 
 	mmc_bus_get(host);
@@ -2793,6 +2791,9 @@ int mmc_resume_bus(struct mmc_host *host)
 				mmc_card_clr_suspended(host->card);
 		}
 	}
+
+	if (host->bus_ops->detect && !host->bus_dead)
+		host->bus_ops->detect(host);
 
 	mmc_bus_put(host);
 	pr_debug("%s: Deferred resume completed\n", mmc_hostname(host));
@@ -3711,6 +3712,7 @@ int _mmc_detect_card_removed(struct mmc_host *host)
 	if (ret) {
 		mmc_card_set_removed(host->card);
 		pr_debug("%s: card remove detected\n", mmc_hostname(host));
+		ST_LOG("<%s> %s: card remove detected\n", __func__,mmc_hostname(host));
 	}
 
 	return ret;
@@ -3753,7 +3755,6 @@ EXPORT_SYMBOL(mmc_detect_card_removed);
 
 void mmc_rescan(struct work_struct *work)
 {
-	unsigned long flags;
 	struct mmc_host *host =
 		container_of(work, struct mmc_host, detect.work);
 
@@ -3762,12 +3763,8 @@ void mmc_rescan(struct work_struct *work)
 		host->trigger_card_event = false;
 	}
 
-	spin_lock_irqsave(&host->lock, flags);
-	if (host->rescan_disable) {
-		spin_unlock_irqrestore(&host->lock, flags);
+	if (host->rescan_disable)
 		return;
-	}
-	spin_unlock_irqrestore(&host->lock, flags);
 
 	/* If there is a non-removable card registered, only scan once */
 	if ((host->caps & MMC_CAP_NONREMOVABLE) && host->rescan_entered)
@@ -3804,7 +3801,7 @@ void mmc_rescan(struct work_struct *work)
 	 * release the lock here.
 	 */
 	mmc_bus_put(host);
-
+#ifndef	CONFIG_NO_DETECT_PIN
 	if (!(host->caps & MMC_CAP_NONREMOVABLE) && host->ops->get_cd &&
 			host->ops->get_cd(host) == 0) {
 		mmc_claim_host(host);
@@ -3812,6 +3809,8 @@ void mmc_rescan(struct work_struct *work)
 		mmc_release_host(host);
 		goto out;
 	}
+#endif
+	ST_LOG("<%s> %s: card remove detected\n", __func__,mmc_hostname(host));
 
 	mmc_claim_host(host);
 	(void) mmc_rescan_try_freq(host, host->f_min);
@@ -4010,6 +4009,10 @@ int mmc_pm_notify(struct notifier_block *notify_block,
 	case PM_SUSPEND_PREPARE:
 	case PM_RESTORE_PREPARE:
 		spin_lock_irqsave(&host->lock, flags);
+		if (mmc_bus_needs_resume(host)) {
+			spin_unlock_irqrestore(&host->lock, flags);
+			break;
+		}
 		host->rescan_disable = 1;
 		spin_unlock_irqrestore(&host->lock, flags);
 		cancel_delayed_work_sync(&host->detect);

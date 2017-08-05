@@ -979,80 +979,6 @@ int cpr3_parse_common_thread_data(struct cpr3_thread *thread)
 	return rc;
 }
 
-static int cpr3_panic_notifier_init(struct cpr3_controller *ctrl)
-{
-	struct device_node *node = ctrl->dev->of_node;
-	struct cpr3_panic_regs_info *panic_regs_info;
-	struct cpr3_reg_info *regs;
-	int i, reg_count, len, rc = 0;
-
-	if (!of_find_property(node, "qcom,cpr-panic-reg-addr-list", &len)) {
-		/* panic register address list not specified */
-		return rc;
-	}
-
-	reg_count = len / sizeof(u32);
-	if (!reg_count) {
-		cpr3_err(ctrl, "qcom,cpr-panic-reg-addr-list has invalid len = %d\n",
-			len);
-		return -EINVAL;
-	}
-
-	if (!of_find_property(node, "qcom,cpr-panic-reg-name-list", NULL)) {
-		cpr3_err(ctrl, "property qcom,cpr-panic-reg-name-list not specified\n");
-		return -EINVAL;
-	}
-
-	len = of_property_count_strings(node, "qcom,cpr-panic-reg-name-list");
-	if (reg_count != len) {
-		cpr3_err(ctrl, "qcom,cpr-panic-reg-name-list should have %d strings\n",
-			reg_count);
-		return -EINVAL;
-	}
-
-	panic_regs_info = devm_kzalloc(ctrl->dev, sizeof(*panic_regs_info),
-					GFP_KERNEL);
-	if (!panic_regs_info)
-		return -ENOMEM;
-
-	regs = devm_kcalloc(ctrl->dev, reg_count, sizeof(*regs), GFP_KERNEL);
-	if (!regs)
-		return -ENOMEM;
-
-	for (i = 0; i < reg_count; i++) {
-		rc = of_property_read_string_index(node,
-				"qcom,cpr-panic-reg-name-list", i,
-				&(regs[i].name));
-		if (rc) {
-			cpr3_err(ctrl, "error reading property qcom,cpr-panic-reg-name-list, rc=%d\n",
-				rc);
-			return rc;
-		}
-
-		rc = of_property_read_u32_index(node,
-				"qcom,cpr-panic-reg-addr-list", i,
-				&(regs[i].addr));
-		if (rc) {
-			cpr3_err(ctrl, "error reading property qcom,cpr-panic-reg-addr-list, rc=%d\n",
-				rc);
-			return rc;
-		}
-		regs[i].virt_addr = devm_ioremap(ctrl->dev, regs[i].addr, 0x4);
-		if (!regs[i].virt_addr) {
-			pr_err("Unable to map panic register addr 0x%08x\n",
-				regs[i].addr);
-			return -EINVAL;
-		}
-		regs[i].value = 0xFFFFFFFF;
-	}
-
-	panic_regs_info->reg_count = reg_count;
-	panic_regs_info->regs = regs;
-	ctrl->panic_regs_info = panic_regs_info;
-
-	return rc;
-}
-
 /**
  * cpr3_parse_common_ctrl_data() - parse common CPR3 controller properties from
  *		device tree
@@ -1175,8 +1101,6 @@ int cpr3_parse_common_ctrl_data(struct cpr3_controller *ctrl)
 			return rc;
 		}
 	}
-
-	rc = cpr3_panic_notifier_init(ctrl);
 
 	return rc;
 }
@@ -1334,7 +1258,7 @@ void cpr3_print_quots(struct cpr3_regulator *vreg)
 		for (j = 0, pos = 0; j < CPR3_RO_COUNT; j++)
 			pos += scnprintf(buf + pos, buflen - pos, " %u",
 				vreg->corner[i].target_quot[j]);
-		cpr3_debug(vreg, "target quots[%2d]:%s\n", i, buf);
+		cpr3_info(vreg, "target quots[%2d]:%s\n", i, buf);
 	}
 
 	kfree(buf);

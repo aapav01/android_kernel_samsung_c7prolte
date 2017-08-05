@@ -56,7 +56,7 @@
 #define C0_G_Y		0	/* G/luma */
 
 /* wait for at most 2 vsync for lowest refresh rate (24hz) */
-#define KOFF_TIMEOUT msecs_to_jiffies(84)
+#define KOFF_TIMEOUT msecs_to_jiffies(1000)
 
 #define OVERFETCH_DISABLE_TOP		BIT(0)
 #define OVERFETCH_DISABLE_BOTTOM	BIT(1)
@@ -339,6 +339,10 @@ struct mdss_mdp_ctl_intfs_ops {
 			enum dynamic_switch_modes mode, bool pre);
 	/* called before do any register programming  from commit thread */
 	void (*pre_programming)(struct mdss_mdp_ctl *ctl);
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	int (*wait_video_pingpong) (struct mdss_mdp_ctl *ctl, void *arg);
+#endif
 };
 
 struct mdss_mdp_ctl {
@@ -445,6 +449,9 @@ struct mdss_mdp_ctl {
 	u64 last_input_time;
 	int pending_mode_switch;
 	u16 frame_rate;
+
+	/* dynamic resolution switch during cont-splash handoff */
+	bool switch_with_handoff;
 };
 
 struct mdss_mdp_mixer {
@@ -1667,4 +1674,8 @@ void mdss_mdp_free_layer_pp_info(struct mdp_input_layer *layer)
 }
 
 #endif /* CONFIG_FB_MSM_MDP_NONE */
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+void samsung_timing_engine_control(int enable);
+#endif
 #endif /* MDSS_MDP_H */

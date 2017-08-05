@@ -224,7 +224,6 @@ struct dentry *panel_debugfs_create_array(const char *name, umode_t mode,
 	    (size != sizeof(u16)) &&
 	    (size != sizeof(u32))) {
 		pr_warn("Value size %zu bytes is not supported\n", size);
-		kfree(data);
 		return NULL;
 	}
 
@@ -451,12 +450,10 @@ int mdss_panel_debugfs_setup(struct mdss_panel_info *panel_info, struct dentry
 		return -ENOMEM;
 	}
 
-	debugfs_info->parent = parent;
 	debugfs_info->root = debugfs_create_dir(intf_str, parent);
 	if (IS_ERR_OR_NULL(debugfs_info->root)) {
 		pr_err("Debugfs create dir failed with error: %ld\n",
 					PTR_ERR(debugfs_info->root));
-		kfree(debugfs_info);
 		return -ENODEV;
 	}
 
@@ -501,7 +498,6 @@ int mdss_panel_debugfs_init(struct mdss_panel_info *panel_info,
 				intf_str);
 		if (rc) {
 			pr_err("error in initilizing panel debugfs\n");
-			mdss_panel_debugfs_cleanup(&pdata->panel_info);
 			return rc;
 		}
 		pdata = pdata->next;
@@ -515,16 +511,13 @@ void mdss_panel_debugfs_cleanup(struct mdss_panel_info *panel_info)
 {
 	struct mdss_panel_data *pdata;
 	struct mdss_panel_debugfs_info *debugfs_info;
-	struct dentry *parent = NULL;
 	pdata = container_of(panel_info, struct mdss_panel_data, panel_info);
 	do {
 		debugfs_info = pdata->panel_info.debugfs_info;
-		if (debugfs_info && !parent)
-			parent = debugfs_info->parent;
-		kfree(debugfs_info);
+		if (debugfs_info && debugfs_info->root)
+			debugfs_remove_recursive(debugfs_info->root);
 		pdata = pdata->next;
 	} while (pdata);
-	debugfs_remove_recursive(parent);
 	pr_debug("Cleaned up mdss_panel_debugfs_info\n");
 }
 

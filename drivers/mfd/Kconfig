@@ -10,6 +10,21 @@ config MFD_CORE
 	select IRQ_DOMAIN
 	default n
 
+config MFD_SM5703
+	tristate "Support for Siliconmitus SM5703 I/F PMIC"
+	depends on I2C
+	select MFD_CORE
+	default n
+	help
+	  If you say yes to this option, support will be included for the
+	  SM5703 I/F PMIC chip.
+config MFD_SM5703_EN_MRSTB
+	bool "Enable MRSTB function"
+	depends on MFD_SM5703
+	default n
+	help
+	  If you enable this function, you need to connect MRSTB to AP's GPIO,
+	  and then assign GPIO number in DTSI or board file
 config MFD_CS5535
 	tristate "AMD CS5535 and CS5536 southbridge core functions"
 	select MFD_CORE
@@ -107,6 +122,37 @@ config MFD_CROS_EC_SPI
 	  through a SPI bus, using a byte-level protocol. Since the EC's
 	  response time cannot be guaranteed, we support ignoring
 	  'pre-amble' bytes before the response actually starts.
+
+config MFD_MADERA
+	select REGMAP
+	select MFD_CORE
+	bool
+
+config MFD_MADERA_I2C
+	tristate "Cirrus Logic Madera codecs with I2C"
+	select MFD_MADERA
+	select MADERA_IRQ
+	select REGMAP_I2C
+	depends on I2C
+	help
+	  Support for the Cirrus Logic Madera platform audio SoC
+	  core functionality controlled via I2C.
+
+config MFD_MADERA_SPI
+	tristate "Cirrus Logic Madera codecs with SPI"
+	select MFD_MADERA
+	select MADERA_IRQ
+	select REGMAP_SPI
+	depends on SPI_MASTER
+	help
+	  Support for the Cirrus Logic Madera platform audio SoC
+	  core functionality controlled via SPI.
+
+config MFD_CS47L15
+	bool "Cirrus Logic CS47L15"
+	depends on MFD_MADERA
+	help
+	  Support for Cirrus Logic CS47L15 Smart Codec
 
 config MFD_ASIC3
 	bool "Compaq ASIC3"
@@ -1317,6 +1363,34 @@ config MFD_STW481X
 	  Select this option to enable the STw481x chip driver used
 	  in various ST Microelectronics and ST-Ericsson embedded
 	  Nomadik series.
+
+config MFD_SM5705
+        bool "Siliconmitus SM5705 IFPM Support"
+        depends on I2C=y
+        select MFD_CORE
+        help
+          Say yes here to support for Siliconmitus SM5705.
+          This is a Power Management IC with USBLDO, RGB(SVC led), Dual Flash, Charger 
+          controls on chip.
+          This driver provides common support for accessing the device;
+          additional drivers
+
+config MFD_S2MU005
+	bool "SAMSUNG Electronics IF PMIC Series Support"
+	depends on I2C=y
+	select MFD_CORE
+	help
+	 Support for the Samsung Electronics MFD series.
+	 This driver provides common support for accessing the device,
+	 additional drivers must be enabled in order to use the functionality
+	 of the device
+
+config LEDS_S2MU005_FLASH
+	 tristate "Siliconmitus S2MU005 flash LED driver"
+	 depends on LEDS_S2MU005
+	 help
+	  A driver for Siliconmitus S2MU005 flash LED
+	  This option enables support for the LEDs on the S2MU005.
 
 config WCD9320_CODEC
 	tristate "WCD9320 Codec"

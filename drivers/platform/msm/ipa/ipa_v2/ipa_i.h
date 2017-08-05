@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -367,6 +367,7 @@ struct ipa_rt_tbl {
  * @id: header entry id
  * @is_eth2_ofst_valid: is eth2_ofst field valid?
  * @eth2_ofst: offset to start of Ethernet-II/802.3 header
+ * @user_deleted: is the header deleted by the user?
  */
 struct ipa_hdr_entry {
 	struct list_head link;
@@ -384,6 +385,7 @@ struct ipa_hdr_entry {
 	int id;
 	u8 is_eth2_ofst_valid;
 	u16 eth2_ofst;
+	bool user_deleted;
 };
 
 /**
@@ -459,6 +461,7 @@ struct ipa_hdr_proc_ctx_add_hdr_cmd_seq {
  * @cookie: cookie used for validity check
  * @ref_cnt: reference counter of routing table
  * @id: processing context header entry id
+ * @user_deleted: is the hdr processing context deleted by the user?
  */
 struct ipa_hdr_proc_ctx_entry {
 	struct list_head link;
@@ -468,6 +471,7 @@ struct ipa_hdr_proc_ctx_entry {
 	u32 cookie;
 	u32 ref_cnt;
 	int id;
+	bool user_deleted;
 };
 
 /**
@@ -1415,9 +1419,6 @@ struct ipa_context {
 	/* M-release support to know client pipes */
 	struct ipacm_client_info ipacm_client[IPA_MAX_NUM_PIPES];
 	bool tethered_flow_control;
-	u32 ipa_rx_min_timeout_usec;
-	u32 ipa_rx_max_timeout_usec;
-	u32 ipa_polling_iteration;
 };
 
 /**
@@ -1469,8 +1470,6 @@ struct ipa_plat_drv_res {
 	bool skip_uc_pipe_reset;
 	bool use_dma_zone;
 	bool tethered_flow_control;
-	u32 ipa_rx_polling_sleep_msec;
-	u32 ipa_polling_iteration;
 };
 
 struct ipa_mem_partition {
@@ -1641,6 +1640,8 @@ int ipa2_add_hdr(struct ipa_ioc_add_hdr *hdrs);
 
 int ipa2_del_hdr(struct ipa_ioc_del_hdr *hdls);
 
+int ipa2_del_hdr_by_user(struct ipa_ioc_del_hdr *hdls, bool by_user);
+
 int ipa2_commit_hdr(void);
 
 int ipa2_reset_hdr(void);
@@ -1657,6 +1658,9 @@ int ipa2_copy_hdr(struct ipa_ioc_copy_hdr *copy);
 int ipa2_add_hdr_proc_ctx(struct ipa_ioc_add_hdr_proc_ctx *proc_ctxs);
 
 int ipa2_del_hdr_proc_ctx(struct ipa_ioc_del_hdr_proc_ctx *hdls);
+
+int ipa2_del_hdr_proc_ctx_by_user(struct ipa_ioc_del_hdr_proc_ctx *hdls,
+	bool by_user);
 
 /*
  * Routing
@@ -1941,9 +1945,6 @@ void ipa_debugfs_init(void);
 void ipa_debugfs_remove(void);
 
 void ipa_dump_buff_internal(void *base, dma_addr_t phy_base, u32 size);
-
-void ipa_rx_timeout_min_max_calc(u32 *min, u32 *max, s8 time);
-
 #ifdef IPA_DEBUG
 #define IPA_DUMP_BUFF(base, phy_base, size) \
 	ipa_dump_buff_internal(base, phy_base, size)
@@ -1975,7 +1976,7 @@ int ipa2_active_clients_log_print_table(char *buf, int size);
 void ipa2_active_clients_log_clear(void);
 int ipa_interrupts_init(u32 ipa_irq, u32 ee, struct device *ipa_dev);
 int __ipa_del_rt_rule(u32 rule_hdl);
-int __ipa_del_hdr(u32 hdr_hdl);
+int __ipa_del_hdr(u32 hdr_hdl, bool by_user);
 int __ipa_release_hdr(u32 hdr_hdl);
 int __ipa_release_hdr_proc_ctx(u32 proc_ctx_hdl);
 int _ipa_read_gen_reg_v1_1(char *buff, int max_len);

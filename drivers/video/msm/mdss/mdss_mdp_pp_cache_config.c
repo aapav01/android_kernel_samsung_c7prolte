@@ -358,7 +358,7 @@ int pp_dither_cache_params(struct mdp_dither_cfg_data *config,
 {
 	int ret = 0;
 	if (!config || !mdss_pp_res) {
-		pr_err("invalid param config %pK pp_res %pK\n",
+		pr_err("invalid param config %pKi pp_res %pK\n",
 			config, mdss_pp_res);
 		return -EINVAL;
 	}

@@ -451,7 +451,7 @@ static int rmnet_xmit(struct sk_buff *skb, struct net_device *dev)
 	if (netif_queue_stopped(dev)) {
 		pr_err("[%s]fatal: rmnet_xmit called when "
 			"netif_queue is stopped", dev->name);
-		return 0;
+		return NETDEV_TX_BUSY;
 	}
 
 	spin_lock_irqsave(&p->lock, flags);

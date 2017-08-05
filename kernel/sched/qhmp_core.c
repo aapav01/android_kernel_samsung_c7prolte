@@ -85,6 +85,8 @@
 #include <asm/paravirt.h>
 #endif
 
+#include <linux/sec_debug.h>
+
 #include "qhmp_sched.h"
 #include "../workqueue_internal.h"
 #include "../smpboot.h"
@@ -4526,8 +4528,7 @@ static noinline void __schedule_bug(struct task_struct *prev)
 static inline void schedule_debug(struct task_struct *prev)
 {
 #ifdef CONFIG_SCHED_STACK_END_CHECK
-	if (unlikely(task_stack_end_corrupted(prev)))
-		panic("corrupted stack end detected inside scheduler\n");
+	BUG_ON(unlikely(task_stack_end_corrupted(prev)));
 #endif
 	/*
 	 * Test if we are atomic. Since do_exit() needs to call into
@@ -7156,14 +7157,6 @@ static int sched_cpu_active(struct notifier_block *nfb,
 	case CPU_STARTING:
 		set_cpu_rq_start_time();
 		return NOTIFY_OK;
-	case CPU_ONLINE:
-		/*
-		 * At this point a starting CPU has marked itself as online via
-		 * set_cpu_online(). But it might not yet have marked itself
-		 * as active, which is essential from here on.
-		 *
-		 * Thus, fall-through and help the starting CPU along.
-		 */
 	case CPU_DOWN_FAILED:
 		set_cpu_active((long)hcpu, true);
 		return NOTIFY_OK;
@@ -8911,6 +8904,9 @@ void __init sched_init(void)
 {
 	int i, j;
 	unsigned long alloc_size = 0, ptr;
+
+	sec_gaf_supply_rqinfo(offsetof(struct rq, curr),
+			offsetof(struct cfs_rq, rq));
 
 	if (sched_enable_hmp)
 		pr_info("HMP scheduling enabled.\n");

@@ -42,6 +42,10 @@
 #include <linux/configfs.h>
 #include <linux/usb/composite.h>
 
+#ifdef CONFIG_USB_NOTIFY_PROC_LOG
+#include <linux/usblog_proc_notify.h>
+#endif
+
 #define MAX_INST_NAME_LEN        40
 #define BULK_BUFFER_SIZE    16384
 #define ACC_STRING_SIZE     256
@@ -448,19 +452,12 @@ static void acc_hid_close(struct hid_device *hid)
 {
 }
 
-static int acc_hid_raw_request(struct hid_device *hid, unsigned char reportnum,
-	__u8 *buf, size_t len, unsigned char rtype, int reqtype)
-{
-	return 0;
-}
-
 static struct hid_ll_driver acc_hid_ll_driver = {
 	.parse = acc_hid_parse,
 	.start = acc_hid_start,
 	.stop = acc_hid_stop,
 	.open = acc_hid_open,
 	.close = acc_hid_close,
-	.raw_request = acc_hid_raw_request,
 };
 
 static struct acc_hid_dev *acc_hid_new(struct acc_dev *dev,
@@ -805,10 +802,12 @@ static long acc_ioctl(struct file *fp, unsigned code, unsigned long value)
 
 static int acc_open(struct inode *ip, struct file *fp)
 {
-	printk(KERN_INFO "acc_open\n");
 	if (atomic_xchg(&_acc_dev->open_excl, 1))
+	{
+		printk(KERN_INFO "usb: acc_open_EBUSY\n");
 		return -EBUSY;
-
+	}
+	printk(KERN_INFO "usb: acc_open\n");
 	_acc_dev->disconnected = 0;
 	fp->private_data = _acc_dev;
 	return 0;
@@ -1096,7 +1095,11 @@ acc_function_unbind(struct usb_configuration *c, struct usb_function *f)
 static void acc_start_work(struct work_struct *data)
 {
 	char *envp[2] = { "ACCESSORY=START", NULL };
+	printk(KERN_INFO "usb: Send uevent, ACCESSORY=START \n");
 	kobject_uevent_env(&acc_device.this_device->kobj, KOBJ_CHANGE, envp);
+#ifdef CONFIG_USB_NOTIFY_PROC_LOG
+	store_usblog_notify(NOTIFY_USBSTATE, (void *)envp[0], NULL);
+#endif
 }
 
 static int acc_hid_init(struct acc_hid_dev *hdev)

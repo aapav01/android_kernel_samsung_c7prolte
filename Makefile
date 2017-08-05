@@ -221,12 +221,9 @@ export srctree objtree VPATH
 # then ARCH is assigned, getting whatever value it gets normally, and
 # SUBARCH is subsequently ignored.
 
-SUBARCH := $(shell uname -m | sed -e s/i.86/x86/ -e s/x86_64/x86/ \
-				  -e s/sun4u/sparc64/ \
-				  -e s/arm.*/arm/ -e s/sa110/arm/ \
-				  -e s/s390x/s390/ -e s/parisc64/parisc/ \
-				  -e s/ppc.*/powerpc/ -e s/mips.*/mips/ \
-				  -e s/sh[234].*/sh/ -e s/aarch64.*/arm64/ )
+export KBUILD_BUILDHOST := $(SUBARCH)
+		ARCH		?=arm64
+		CROSS_COMPILE	?=../PLATFORM/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin/aarch64-linux-android-
 
 # Cross compiling and selecting different set of gcc/bin-utils
 # ---------------------------------------------------------------------------
@@ -787,6 +784,14 @@ include $(srctree)/scripts/Makefile.ubsan
 KBUILD_CPPFLAGS += $(KCPPFLAGS)
 KBUILD_AFLAGS += $(KAFLAGS)
 KBUILD_CFLAGS += $(KCFLAGS)
+
+ifeq ($(CONFIG_SENSORS_FINGERPRINT), y)
+ifneq ($(CONFIG_SEC_FACTORY), true)
+ifneq ($(SEC_BUILD_CONF_USE_FINGERPRINT_TZ), false)
+	export KBUILD_FP_SENSOR_CFLAGS := -DENABLE_SENSORS_FPRINT_SECURE
+endif
+endif
+endif
 
 # Use --build-id when available.
 LDFLAGS_BUILD_ID = $(patsubst -Wl$(comma)%,%,\

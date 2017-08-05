@@ -29,9 +29,16 @@
 #include "mdss_debug.h"
 #include "mdss_smmu.h"
 #include "mdss_dsi_phy.h"
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+#include "samsung/ss_dsi_panel_common.h"
+#endif
 
 #define VSYNC_PERIOD 17
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+#define DMA_TX_TIMEOUT 1000
+#else
 #define DMA_TX_TIMEOUT 200
+#endif
 #define DMA_TPG_FIFO_LEN 64
 
 #define FIFO_STATUS	0x0C
@@ -1011,6 +1018,7 @@ void mdss_dsi_op_mode_config(int mode,
 	u32 dsi_ctrl, intr_ctrl, dma_ctrl;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 
+
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
 		return;
@@ -1028,6 +1036,7 @@ void mdss_dsi_op_mode_config(int mode,
 
 	if (mode == DSI_VIDEO_MODE) {
 		dsi_ctrl |= 0x03;
+
 		intr_ctrl = DSI_INTR_CMD_DMA_DONE_MASK | DSI_INTR_BTA_DONE_MASK
 			| DSI_INTR_ERROR_MASK;
 	} else {		/* command mode */
@@ -1084,7 +1093,11 @@ static int mdss_dsi_read_status(struct mdss_dsi_ctrl_pdata *ctrl)
 	int start = 0;
 	struct dcs_cmd_req cmdreq;
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	rc = 0;
+#else
 	rc = 1;
+#endif
 	lenp = ctrl->status_valid_params ?: ctrl->status_cmds_rlen;
 
 	for (i = 0; i < ctrl->status_cmds.cmd_cnt; ++i) {
@@ -1581,6 +1594,48 @@ static int mdss_dsi_cmd_dma_tpg_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	return ret;
 }
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+static void print_cmd_desc(struct mdss_dsi_ctrl_pdata *ctrl,
+		struct dsi_cmd_desc *cmds, int cnt)
+{
+	struct samsung_display_driver_data *vdd = NULL;
+	char buf[1016]; // temp 1024 -> 1000
+	int len;
+	int i,j;
+
+	if (IS_ERR_OR_NULL(ctrl))
+		return;
+
+	vdd = check_valid_ctrl(ctrl);
+
+	if (IS_ERR_OR_NULL(vdd))
+		return;
+
+	if (!vdd->debug_data->print_cmds) {
+		LCD_DEBUG("print_cmds is disabled(%s)",
+				vdd->debug_data->print_cmds ? "enabled" : "disabled");
+		return;
+	}
+
+	for (j=0; j < cnt; j++) {
+		len = 0;
+		len += sprintf(buf, "%02x ", cmds[j].dchdr.dtype);
+		len += sprintf(buf + len, "%02x ", cmds[j].dchdr.last);
+		len += sprintf(buf + len, "%02x ", cmds[j].dchdr.vc);
+		len += sprintf(buf + len, "%02x ", cmds[j].dchdr.ack);
+		len += sprintf(buf + len, "%02x ", cmds[j].dchdr.wait);
+		len += sprintf(buf + len, "%02x ", cmds[j].dchdr.dlen);
+
+		for (i = 0; i < cmds[j].dchdr.dlen; i++)
+			len += sprintf(buf + len, "%02x ", cmds[j].payload[i]);
+
+		LCD_INFO("(%02d) %s\n", j, buf);
+	}
+
+	return;
+}
+#endif
+
 static int mdss_dsi_cmds2buf_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 			struct dsi_cmd_desc *cmds, int cnt, int use_dma_tpg)
 {
@@ -1593,6 +1648,11 @@ static int mdss_dsi_cmds2buf_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	mdss_dsi_buf_init(tp);
 	cm = cmds;
 	len = 0;
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	print_cmd_desc(ctrl, cmds, cnt);
+#endif
+
 	while (cnt--) {
 		dchdr = &cm->dchdr;
 		mdss_dsi_buf_reserve(tp, len);
@@ -2058,8 +2118,8 @@ static int mdss_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 		status = reg_val & DSI_INTR_CMD_DMA_DONE;
 		if (status) {
 			reg_val &= DSI_INTR_MASK_ALL;
-			/* clear CMD DMA and BTA_DONE isr only */
-			reg_val |= (DSI_INTR_CMD_DMA_DONE | DSI_INTR_BTA_DONE);
+			/* clear CMD DMA isr only */
+			reg_val |= DSI_INTR_CMD_DMA_DONE;
 			MIPI_OUTP(ctrl->ctrl_base + 0x0110, reg_val);
 			mdss_dsi_disable_irq_nosync(ctrl, DSI_CMD_TERM);
 			complete(&ctrl->dma_comp);
@@ -2467,7 +2527,11 @@ int mdss_dsi_cmdlist_rx(struct mdss_dsi_ctrl_pdata *ctrl,
 		rp = &ctrl->rx_buf;
 		len = mdss_dsi_cmds_rx(ctrl, req->cmds, req->rlen,
 				(req->flags & CMD_REQ_DMA_TPG));
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+		pr_debug("%s skip memcopy to req-buffer from rx buffer", __func__);
+#else
 		memcpy(req->rbuf, rp->data, rp->len);
+#endif
 		ctrl->rx_len = len;
 	} else {
 		pr_err("%s: No rx buffer provided\n", __func__);
@@ -3095,11 +3159,6 @@ irqreturn_t mdss_dsi_isr(int irq, void *ptr)
 
 	pr_debug("%s: ndx=%d isr=%x\n", __func__, ctrl->ndx, isr);
 
-	if (isr & DSI_INTR_ERROR) {
-		MDSS_XLOG(ctrl->ndx, ctrl->mdp_busy, isr, 0x97);
-		mdss_dsi_error(ctrl);
-	}
-
 	if (isr & DSI_INTR_BTA_DONE) {
 		MDSS_XLOG(ctrl->ndx, ctrl->mdp_busy, isr, 0x96);
 		spin_lock(&ctrl->mdp_lock);
@@ -3122,6 +3181,11 @@ irqreturn_t mdss_dsi_isr(int irq, void *ptr)
 			mdss_dsi_set_reg(ctrl, 0x0c, 0x44440000, 0x44440000);
 		}
 		spin_unlock(&ctrl->mdp_lock);
+	}
+
+	if (isr & DSI_INTR_ERROR) {
+		MDSS_XLOG(ctrl->ndx, ctrl->mdp_busy, isr, 0x97);
+		mdss_dsi_error(ctrl);
 	}
 
 	if (isr & DSI_INTR_VIDEO_DONE) {

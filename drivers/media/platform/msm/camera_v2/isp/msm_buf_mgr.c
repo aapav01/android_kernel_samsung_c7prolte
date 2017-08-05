@@ -26,6 +26,8 @@
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-device.h>
 #include <media/videobuf2-core.h>
+#include <media/msm_camera.h>
+#include <media/msm_isp.h>
 
 #include "msm.h"
 #include "msm_buf_mgr.h"
@@ -1330,7 +1332,6 @@ static int msm_isp_buf_mgr_debug(struct msm_isp_buf_mgr *buf_mgr,
 
 	for (i = 0; i < BUF_MGR_NUM_BUF_Q; i++) {
 		bufq = &buf_mgr->bufq[i];
-
 		spin_lock_irqsave(&bufq->bufq_lock, flags);
 		if (!bufq->bufq_handle) {
 			spin_unlock_irqrestore(&bufq->bufq_lock, flags);

@@ -135,6 +135,56 @@ fw-shipped-$(CONFIG_USB_SERIAL_XIRCOM) += keyspan_pda/xircom_pgs.fw
 fw-shipped-$(CONFIG_USB_VICAM) += vicam/firmware.fw
 fw-shipped-$(CONFIG_VIDEO_CPIA2) += cpia2/stv0672_vp4.bin
 fw-shipped-$(CONFIG_YAM) += yam/1200.bin yam/9600.bin
+fw-shipped-$(CONFIG_CCIC_S2MM003) += usbpd/USB_PD_FULL_DRIVER.bin
+
+# Input Device
+ifdef CONFIG_SEC_C7PROLTE_CHN
+fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_MMS449)+= tsp_melfas/mms449_c7pro.fw
+fw-shipped-$(CONFIG_KEYBOARD_ABOV_TOUCH_16XX) += abov/abov_tk_1604_c7pro.fw
+else
+ifdef CONFIG_SEC_C7PROLTE_SWA
+fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_MMS449)+= tsp_melfas/mms449_c7pro.fw
+fw-shipped-$(CONFIG_KEYBOARD_ABOV_TOUCH_16XX) += abov/abov_tk_1604_c7pro.fw
+else
+fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_MMS449)+= tsp_melfas/mms449_c7.fw
+fw-shipped-$(CONFIG_KEYBOARD_ABOV_TOUCH_16XX) += abov/abov_tk_1604_c7.fw
+endif
+endif
+fw-shipped-$(CONFIG_TOUCHSCREEN_FTS7) 		+= tsp_stm/stm_gtaxlqlte.fw
+fw-shipped-$(CONFIG_KEYBOARD_ABOV_TOUCH_18XX) += abov/abov_tk_1804_c7.fw
+ifdef CONFIG_SEC_ON7XLTE_CHN
+fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_INCELL) += tsp_synaptics/td4300_on7xlte.fw \
+						tsp_synaptics/td4300_on7xlte_recovery.fw
+fw-shipped-$(CONFIG_KEYBOARD_MELFAS_MHS204) += tk_melfas/mhs204_on7xlte.fw
+endif
+ifdef CONFIG_SEC_ON5XLLTE_PROJECT
+fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_INCELL) += tsp_synaptics/td4100_on5xllte.fw \
+						tsp_synaptics/td4100_on5xllte_recovery.fw
+fw-shipped-$(CONFIG_KEYBOARD_MELFAS_MHS204) += tk_melfas/mhs204_on5xllte.fw
+endif
+ifdef CONFIG_SEC_J3POPLTE_PROJECT
+fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_INCELL) += tsp_synaptics/td4100_j3pop.fw \
+							tsp_synaptics/td4100_j3pop_recovery.fw
+fw-shipped-$(CONFIG_KEYBOARD_TC3XXK) += tk_coreriver/tc350k_j3pop.fw
+endif
+ifdef CONFIG_SEC_J7POPLTE_USA_VZW
+fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_INCELL) += tsp_synaptics/td4100_j7pop.fw \
+							tsp_synaptics/td4100_j7pop_recovery.fw
+fw-shipped-$(CONFIG_KEYBOARD_TC3XXK) += tk_coreriver/tc305k_j7pop.fw
+endif
+ifdef CONFIG_MACH_J7POPQLTE_USA_TFNVZW
+fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_INCELL) += tsp_synaptics/td4100_j7pop.fw \
+							tsp_synaptics/td4100_j7pop_recovery.fw
+fw-shipped-$(CONFIG_KEYBOARD_TC3XXK) += tk_coreriver/tc305k_j7pop.fw
+endif
+
+ifdef CONFIG_SEC_C5PROLTE_CHN
+fw-shipped-$(CONFIG_TOUCHSCREEN_ZINITIX_ZT75XX) += tsp_zinitix/zt7538_c5pro.fw
+fw-shipped-$(CONFIG_KEYBOARD_ABOV_TOUCH_16XX) += abov/abov_tk_1604_c5pro.fw
+endif
+
+#SensorHub
+fw-shipped-$(CONFIG_SENSORS_SSP_STM32f) += ssp_stmf410_cx.fw ssp_crashed.fw ssp_stmf410_cx_old.fw
 
 fw-shipped-all := $(fw-shipped-y) $(fw-shipped-m) $(fw-shipped-)
 

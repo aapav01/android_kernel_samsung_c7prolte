@@ -43,6 +43,8 @@
 #include "sdhci-msm-ice.h"
 #include "cmdq_hci.h"
 
+#include <linux/sec_class.h>
+
 #define QOS_REMOVE_DELAY_MS	10
 #define CORE_POWER		0x0
 #define CORE_SW_RST		(1 << 7)
@@ -195,9 +197,6 @@
 #define NUM_TUNING_PHASES		16
 #define MAX_DRV_TYPES_SUPPORTED_HS200	4
 #define MSM_AUTOSUSPEND_DELAY_MS 100
-
-/* Timeout value to avoid infinite waiting for pwr_irq */
-#define MSM_PWR_IRQ_TIMEOUT_MS 5000
 
 static const u32 tuning_block_64[] = {
 	0x00FF0FFF, 0xCCC3CCFF, 0xFFCC3CC3, 0xEFFEFFFE,
@@ -2581,10 +2580,8 @@ static void sdhci_msm_check_power_status(struct sdhci_host *host, u32 req_type)
 	 */
 	if (done)
 		init_completion(&msm_host->pwr_irq_completion);
-	else if (!wait_for_completion_timeout(&msm_host->pwr_irq_completion,
-				msecs_to_jiffies(MSM_PWR_IRQ_TIMEOUT_MS)))
-		__WARN_printf("%s: request(%d) timed out waiting for pwr_irq\n",
-					mmc_hostname(host->mmc), req_type);
+	else
+		wait_for_completion(&msm_host->pwr_irq_completion);
 
 	pr_debug("%s: %s: request %d done\n", mmc_hostname(host->mmc),
 			__func__, req_type);
@@ -3878,6 +3875,50 @@ static bool sdhci_msm_is_bootdevice(struct device *dev)
 	return true;
 }
 
+/* SYSFS about SD Card Detection */
+static struct device *t_flash_detect_dev;
+
+static ssize_t t_flash_detect_show(struct device *dev,
+                struct device_attribute *attr, char *buf)
+{
+        struct sdhci_msm_host *msm_host = dev_get_drvdata(dev);
+#if (defined(CONFIG_NO_DETECT_PIN) || defined(CONFIG_SEC_HYBRID_TRAY))
+        if (msm_host->mmc->card) {
+                printk(KERN_DEBUG "SD card inserted.\n");
+                return sprintf(buf, "Insert\n");
+        } else {
+                if (gpio_is_valid(msm_host->pdata->status_gpio) &&
+                                gpio_get_value(msm_host->pdata->status_gpio)) {
+                        printk(KERN_DEBUG "SD slot tray Removed.\n");
+                        return sprintf(buf, "Notray\n");
+                }
+                printk(KERN_DEBUG "SD card removed.\n");
+                return sprintf(buf, "Remove\n");
+        }
+#else
+        unsigned int detect;
+
+        if (gpio_is_valid(msm_host->pdata->status_gpio))
+                detect = gpio_get_value(msm_host->pdata->status_gpio);
+
+        else {
+                pr_info("%s : External  SD detect pin Error\n", __func__);
+                return sprintf(buf, "Error\n");
+        }
+
+        pr_info("%s : detect = %d.\n", __func__, detect);
+        if (!detect) {
+                printk(KERN_DEBUG "SD card inserted.\n");
+                return sprintf(buf, "Insert\n");
+        } else {
+                printk(KERN_DEBUG "SD card removed.\n");
+                return sprintf(buf, "Remove\n");
+        }
+#endif
+}
+
+static DEVICE_ATTR(status, 0444, t_flash_detect_show, NULL);
+
 static int sdhci_msm_probe(struct platform_device *pdev)
 {
 	struct sdhci_host *host;
@@ -4214,13 +4255,12 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	/* Set host capabilities */
 	msm_host->mmc->caps |= msm_host->pdata->mmc_bus_width;
 	msm_host->mmc->caps |= msm_host->pdata->caps;
-	msm_host->mmc->caps |= MMC_CAP_AGGRESSIVE_PM;
+//	msm_host->mmc->caps |= MMC_CAP_AGGRESSIVE_PM;
 	msm_host->mmc->caps |= MMC_CAP_WAIT_WHILE_BUSY;
 	msm_host->mmc->caps2 |= msm_host->pdata->caps2;
 	msm_host->mmc->caps2 |= MMC_CAP2_BOOTPART_NOACC;
 	msm_host->mmc->caps2 |= MMC_CAP2_HS400_POST_TUNING;
-	msm_host->mmc->caps2 |= MMC_CAP2_CLK_SCALE;
-	msm_host->mmc->caps2 |= MMC_CAP2_SANITIZE;
+//	msm_host->mmc->caps2 |= MMC_CAP2_CLK_SCALE;
 	msm_host->mmc->caps2 |= MMC_CAP2_MAX_DISCARD_SIZE;
 	msm_host->mmc->caps2 |= MMC_CAP2_SLEEP_AWAKE;
 	msm_host->mmc->pm_caps |= MMC_PM_KEEP_POWER | MMC_PM_WAKE_SDIO_IRQ;
@@ -4270,6 +4310,26 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 			goto vreg_deinit;
 		}
 	}
+
+        /* SYSFS about SD Card Detection by soonil.lim */
+#if defined(CONFIG_NO_DETECT_PIN)
+        if (t_flash_detect_dev == NULL && !strcmp(host->hw_name, "7864900.sdhci")) {
+#else
+        if (t_flash_detect_dev == NULL && gpio_is_valid(msm_host->pdata->status_gpio)) {
+#endif
+                printk(KERN_DEBUG "%s : Change sysfs Card Detect\n", __func__);
+
+                t_flash_detect_dev = sec_device_create(0, NULL, "sdcard");
+                if (IS_ERR(t_flash_detect_dev))
+                        pr_err("%s : Failed to create device!\n", __func__);
+
+                if (device_create_file(t_flash_detect_dev,
+                        &dev_attr_status) < 0)
+                        pr_err("%s : Failed to create device file(%s)!\n",
+                                        __func__, dev_attr_status.attr.name);
+
+                dev_set_drvdata(t_flash_detect_dev, msm_host);
+        }
 
 	if ((sdhci_readl(host, SDHCI_CAPABILITIES) & SDHCI_CAN_64BIT) &&
 		(dma_supported(mmc_dev(host->mmc), DMA_BIT_MASK(64)))) {

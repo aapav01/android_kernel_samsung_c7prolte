@@ -59,6 +59,7 @@ show up in /proc/sys/kernel:
 - panic_on_oops
 - panic_on_stackoverflow
 - panic_on_unrecovered_nmi
+- perf_cpu_time_max_percent
 - perf_event_paranoid
 - pid_max
 - powersave-nap               [ PPC only ]
@@ -586,6 +587,7 @@ This file shows up if CONFIG_DEBUG_STACKOVERFLOW is enabled.
 
 0: try to continue operation.
 
+1: panic immediately.
 
 ==============================================================
 

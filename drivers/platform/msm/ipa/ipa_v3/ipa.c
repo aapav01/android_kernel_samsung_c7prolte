@@ -632,7 +632,6 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	struct ipa_ioc_v4_nat_del nat_del;
 	struct ipa_ioc_rm_dependency rm_depend;
 	size_t sz;
-	int pre_entry;
 
 	IPADBG("cmd=%x nr=%d\n", cmd, _IOC_NR(cmd));
 
@@ -686,11 +685,11 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-			((struct ipa_ioc_nat_dma_cmd *)header)->entries;
+
 		pyld_sz =
 		   sizeof(struct ipa_ioc_nat_dma_cmd) +
-		   pre_entry * sizeof(struct ipa_ioc_nat_dma_one);
+		   ((struct ipa_ioc_nat_dma_cmd *)header)->entries *
+		   sizeof(struct ipa_ioc_nat_dma_one);
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
 			retval = -ENOMEM;
@@ -701,15 +700,7 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_ioc_nat_dma_cmd *)param)->entries
-			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_ioc_nat_dma_cmd *)param)->entries,
-				pre_entry);
-			retval = -EINVAL;
-			break;
-		}
+
 		if (ipa3_nat_dma_cmd((struct ipa_ioc_nat_dma_cmd *)param)) {
 			retval = -EFAULT;
 			break;
@@ -734,11 +725,10 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-			((struct ipa_ioc_add_hdr *)header)->num_hdrs;
 		pyld_sz =
 		   sizeof(struct ipa_ioc_add_hdr) +
-		   pre_entry * sizeof(struct ipa_hdr_add);
+		   ((struct ipa_ioc_add_hdr *)header)->num_hdrs *
+		   sizeof(struct ipa_hdr_add);
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
 			retval = -ENOMEM;
@@ -746,15 +736,6 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		if (copy_from_user(param, (u8 *)arg, pyld_sz)) {
 			retval = -EFAULT;
-			break;
-		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_ioc_add_hdr *)param)->num_hdrs
-			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_ioc_add_hdr *)param)->num_hdrs,
-				pre_entry);
-			retval = -EINVAL;
 			break;
 		}
 		if (ipa3_add_hdr((struct ipa_ioc_add_hdr *)param)) {
@@ -773,11 +754,10 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-			((struct ipa_ioc_del_hdr *)header)->num_hdls;
 		pyld_sz =
 		   sizeof(struct ipa_ioc_del_hdr) +
-		   pre_entry * sizeof(struct ipa_hdr_del);
+		   ((struct ipa_ioc_del_hdr *)header)->num_hdls *
+		   sizeof(struct ipa_hdr_del);
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
 			retval = -ENOMEM;
@@ -787,16 +767,8 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_ioc_del_hdr *)param)->num_hdls
-			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_ioc_del_hdr *)param)->num_hdls,
-				pre_entry);
-			retval = -EINVAL;
-			break;
-		}
-		if (ipa3_del_hdr((struct ipa_ioc_del_hdr *)param)) {
+		if (ipa3_del_hdr_by_user((struct ipa_ioc_del_hdr *)param,
+			true)) {	
 			retval = -EFAULT;
 			break;
 		}
@@ -812,11 +784,10 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-			((struct ipa_ioc_add_rt_rule *)header)->num_rules;
 		pyld_sz =
 		   sizeof(struct ipa_ioc_add_rt_rule) +
-		   pre_entry * sizeof(struct ipa_rt_rule_add);
+		   ((struct ipa_ioc_add_rt_rule *)header)->num_rules *
+		   sizeof(struct ipa_rt_rule_add);
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
 			retval = -ENOMEM;
@@ -824,16 +795,6 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		if (copy_from_user(param, (u8 *)arg, pyld_sz)) {
 			retval = -EFAULT;
-			break;
-		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_ioc_add_rt_rule *)param)->num_rules
-			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_ioc_add_rt_rule *)param)->
-				num_rules,
-				pre_entry);
-			retval = -EINVAL;
 			break;
 		}
 		if (ipa3_add_rt_rule((struct ipa_ioc_add_rt_rule *)param)) {
@@ -852,11 +813,10 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-			((struct ipa_ioc_add_rt_rule_after *)header)->num_rules;
 		pyld_sz =
 		   sizeof(struct ipa_ioc_add_rt_rule_after) +
-		   pre_entry * sizeof(struct ipa_rt_rule_add);
+		   ((struct ipa_ioc_add_rt_rule_after *)header)->num_rules *
+		   sizeof(struct ipa_rt_rule_add);
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
 			retval = -ENOMEM;
@@ -864,16 +824,6 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		if (copy_from_user(param, (u8 *)arg, pyld_sz)) {
 			retval = -EFAULT;
-			break;
-		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_ioc_add_rt_rule_after *)param)->
-			num_rules != pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_ioc_add_rt_rule_after *)param)->
-				num_rules,
-				pre_entry);
-			retval = -EINVAL;
 			break;
 		}
 		if (ipa3_add_rt_rule_after(
@@ -894,11 +844,10 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-			((struct ipa_ioc_mdfy_rt_rule *)header)->num_rules;
 		pyld_sz =
 		   sizeof(struct ipa_ioc_mdfy_rt_rule) +
-		   pre_entry * sizeof(struct ipa_rt_rule_mdfy);
+		   ((struct ipa_ioc_mdfy_rt_rule *)header)->num_rules *
+		   sizeof(struct ipa_rt_rule_mdfy);
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
 			retval = -ENOMEM;
@@ -906,16 +855,6 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		if (copy_from_user(param, (u8 *)arg, pyld_sz)) {
 			retval = -EFAULT;
-			break;
-		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_ioc_mdfy_rt_rule *)param)->num_rules
-			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_ioc_mdfy_rt_rule *)param)->
-				num_rules,
-				pre_entry);
-			retval = -EINVAL;
 			break;
 		}
 		if (ipa3_mdfy_rt_rule((struct ipa_ioc_mdfy_rt_rule *)param)) {
@@ -934,11 +873,10 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-			((struct ipa_ioc_del_rt_rule *)header)->num_hdls;
 		pyld_sz =
 		   sizeof(struct ipa_ioc_del_rt_rule) +
-		   pre_entry * sizeof(struct ipa_rt_rule_del);
+		   ((struct ipa_ioc_del_rt_rule *)header)->num_hdls *
+		   sizeof(struct ipa_rt_rule_del);
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
 			retval = -ENOMEM;
@@ -946,15 +884,6 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		if (copy_from_user(param, (u8 *)arg, pyld_sz)) {
 			retval = -EFAULT;
-			break;
-		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_ioc_del_rt_rule *)param)->num_hdls
-			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_ioc_del_rt_rule *)param)->num_hdls,
-				pre_entry);
-			retval = -EINVAL;
 			break;
 		}
 		if (ipa3_del_rt_rule((struct ipa_ioc_del_rt_rule *)param)) {
@@ -973,11 +902,10 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-			((struct ipa_ioc_add_flt_rule *)header)->num_rules;
 		pyld_sz =
 		   sizeof(struct ipa_ioc_add_flt_rule) +
-		   pre_entry * sizeof(struct ipa_flt_rule_add);
+		   ((struct ipa_ioc_add_flt_rule *)header)->num_rules *
+		   sizeof(struct ipa_flt_rule_add);
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
 			retval = -ENOMEM;
@@ -985,16 +913,6 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		if (copy_from_user(param, (u8 *)arg, pyld_sz)) {
 			retval = -EFAULT;
-			break;
-		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_ioc_add_flt_rule *)param)->num_rules
-			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_ioc_add_flt_rule *)param)->
-				num_rules,
-				pre_entry);
-			retval = -EINVAL;
 			break;
 		}
 		if (ipa3_add_flt_rule((struct ipa_ioc_add_flt_rule *)param)) {
@@ -1014,12 +932,10 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-			((struct ipa_ioc_add_flt_rule_after *)header)->
-			num_rules;
 		pyld_sz =
 		   sizeof(struct ipa_ioc_add_flt_rule_after) +
-		   pre_entry * sizeof(struct ipa_flt_rule_add);
+		   ((struct ipa_ioc_add_flt_rule_after *)header)->num_rules *
+		   sizeof(struct ipa_flt_rule_add);
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
 			retval = -ENOMEM;
@@ -1027,16 +943,6 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		if (copy_from_user(param, (u8 *)arg, pyld_sz)) {
 			retval = -EFAULT;
-			break;
-		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_ioc_add_flt_rule_after *)param)->
-			num_rules != pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_ioc_add_flt_rule_after *)param)->
-				num_rules,
-				pre_entry);
-			retval = -EINVAL;
 			break;
 		}
 		if (ipa3_add_flt_rule_after(
@@ -1056,11 +962,10 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-			((struct ipa_ioc_del_flt_rule *)header)->num_hdls;
 		pyld_sz =
 		   sizeof(struct ipa_ioc_del_flt_rule) +
-		   pre_entry * sizeof(struct ipa_flt_rule_del);
+		   ((struct ipa_ioc_del_flt_rule *)header)->num_hdls *
+		   sizeof(struct ipa_flt_rule_del);
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
 			retval = -ENOMEM;
@@ -1068,16 +973,6 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		if (copy_from_user(param, (u8 *)arg, pyld_sz)) {
 			retval = -EFAULT;
-			break;
-		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_ioc_del_flt_rule *)param)->num_hdls
-			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_ioc_del_flt_rule *)param)->
-				num_hdls,
-				pre_entry);
-			retval = -EINVAL;
 			break;
 		}
 		if (ipa3_del_flt_rule((struct ipa_ioc_del_flt_rule *)param)) {
@@ -1096,11 +991,10 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-			((struct ipa_ioc_mdfy_flt_rule *)header)->num_rules;
 		pyld_sz =
 		   sizeof(struct ipa_ioc_mdfy_flt_rule) +
-		   pre_entry * sizeof(struct ipa_flt_rule_mdfy);
+		   ((struct ipa_ioc_mdfy_flt_rule *)header)->num_rules *
+		   sizeof(struct ipa_flt_rule_mdfy);
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
 			retval = -ENOMEM;
@@ -1108,16 +1002,6 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		if (copy_from_user(param, (u8 *)arg, pyld_sz)) {
 			retval = -EFAULT;
-			break;
-		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_ioc_mdfy_flt_rule *)param)->num_rules
-			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_ioc_mdfy_flt_rule *)param)->
-				num_rules,
-				pre_entry);
-			retval = -EINVAL;
 			break;
 		}
 		if (ipa3_mdfy_flt_rule((struct ipa_ioc_mdfy_flt_rule *)param)) {
@@ -1233,10 +1117,9 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-			((struct ipa_ioc_query_intf_tx_props *)
-			header)->num_tx_props;
-		pyld_sz = sz + pre_entry *
+
+		pyld_sz = sz + ((struct ipa_ioc_query_intf_tx_props *)
+				header)->num_tx_props *
 			sizeof(struct ipa_ioc_tx_intf_prop);
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
@@ -1245,16 +1128,6 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		if (copy_from_user(param, (u8 *)arg, pyld_sz)) {
 			retval = -EFAULT;
-			break;
-		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_ioc_query_intf_tx_props *)
-			param)->num_tx_props
-			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_ioc_query_intf_tx_props *)
-				param)->num_tx_props, pre_entry);
-			retval = -EINVAL;
 			break;
 		}
 		if (ipa3_query_intf_tx_props(
@@ -1279,10 +1152,9 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-			((struct ipa_ioc_query_intf_rx_props *)
-			header)->num_rx_props;
-		pyld_sz = sz + pre_entry *
+
+		pyld_sz = sz + ((struct ipa_ioc_query_intf_rx_props *)
+				header)->num_rx_props *
 			sizeof(struct ipa_ioc_rx_intf_prop);
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
@@ -1291,15 +1163,6 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		if (copy_from_user(param, (u8 *)arg, pyld_sz)) {
 			retval = -EFAULT;
-			break;
-		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_ioc_query_intf_rx_props *)
-			param)->num_rx_props != pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_ioc_query_intf_rx_props *)
-				param)->num_rx_props, pre_entry);
-			retval = -EINVAL;
 			break;
 		}
 		if (ipa3_query_intf_rx_props(
@@ -1324,10 +1187,9 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-			((struct ipa_ioc_query_intf_ext_props *)
-			header)->num_ext_props;
-		pyld_sz = sz + pre_entry *
+
+		pyld_sz = sz + ((struct ipa_ioc_query_intf_ext_props *)
+				header)->num_ext_props *
 			sizeof(struct ipa_ioc_ext_intf_prop);
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
@@ -1336,15 +1198,6 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		if (copy_from_user(param, (u8 *)arg, pyld_sz)) {
 			retval = -EFAULT;
-			break;
-		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_ioc_query_intf_ext_props *)
-			param)->num_ext_props != pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_ioc_query_intf_ext_props *)
-				param)->num_ext_props, pre_entry);
-			retval = -EINVAL;
 			break;
 		}
 		if (ipa3_query_intf_ext_props(
@@ -1363,10 +1216,8 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-		   ((struct ipa_msg_meta *)header)->msg_len;
 		pyld_sz = sizeof(struct ipa_msg_meta) +
-		   pre_entry;
+		   ((struct ipa_msg_meta *)header)->msg_len;
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
 			retval = -ENOMEM;
@@ -1374,15 +1225,6 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		if (copy_from_user(param, (u8 *)arg, pyld_sz)) {
 			retval = -EFAULT;
-			break;
-		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_msg_meta *)param)->msg_len
-			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_msg_meta *)param)->msg_len,
-				pre_entry);
-			retval = -EINVAL;
 			break;
 		}
 		if (ipa3_pull_msg((struct ipa_msg_meta *)param,
@@ -1501,12 +1343,10 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-			((struct ipa_ioc_add_hdr_proc_ctx *)
-			header)->num_proc_ctxs;
 		pyld_sz =
 		   sizeof(struct ipa_ioc_add_hdr_proc_ctx) +
-		   pre_entry * sizeof(struct ipa_hdr_proc_ctx_add);
+		   ((struct ipa_ioc_add_hdr_proc_ctx *)header)->num_proc_ctxs *
+		   sizeof(struct ipa_hdr_proc_ctx_add);
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
 			retval = -ENOMEM;
@@ -1514,15 +1354,6 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		if (copy_from_user(param, (u8 *)arg, pyld_sz)) {
 			retval = -EFAULT;
-			break;
-		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_ioc_add_hdr_proc_ctx *)
-			param)->num_proc_ctxs != pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_ioc_add_hdr_proc_ctx *)
-				param)->num_proc_ctxs, pre_entry);
-			retval = -EINVAL;
 			break;
 		}
 		if (ipa3_add_hdr_proc_ctx(
@@ -1541,11 +1372,10 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		pre_entry =
-			((struct ipa_ioc_del_hdr_proc_ctx *)header)->num_hdls;
 		pyld_sz =
 		   sizeof(struct ipa_ioc_del_hdr_proc_ctx) +
-		   pre_entry * sizeof(struct ipa_hdr_proc_ctx_del);
+		   ((struct ipa_ioc_del_hdr_proc_ctx *)header)->num_hdls *
+		   sizeof(struct ipa_hdr_proc_ctx_del);
 		param = kzalloc(pyld_sz, GFP_KERNEL);
 		if (!param) {
 			retval = -ENOMEM;
@@ -1555,18 +1385,8 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
-		/* add check in case user-space module compromised */
-		if (unlikely(((struct ipa_ioc_del_hdr_proc_ctx *)
-			param)->num_hdls != pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
-				((struct ipa_ioc_del_hdr_proc_ctx *)param)->
-				num_hdls,
-				pre_entry);
-			retval = -EINVAL;
-			break;
-		}
-		if (ipa3_del_hdr_proc_ctx(
-			(struct ipa_ioc_del_hdr_proc_ctx *)param)) {
+		if (ipa3_del_hdr_proc_ctx_by_user(
+			(struct ipa_ioc_del_hdr_proc_ctx *)param, true)) {
 			retval = -EFAULT;
 			break;
 		}
@@ -2990,7 +2810,7 @@ fail_schedule_delayed_work:
 	if (ipa3_ctx->dflt_v4_rt_rule_hdl)
 		__ipa3_del_rt_rule(ipa3_ctx->dflt_v4_rt_rule_hdl);
 	if (ipa3_ctx->excp_hdr_hdl)
-		__ipa3_del_hdr(ipa3_ctx->excp_hdr_hdl);
+		__ipa3_del_hdr(ipa3_ctx->excp_hdr_hdl, false);
 	ipa3_teardown_sys_pipe(ipa3_ctx->clnt_hdl_cmd);
 fail_cmd:
 	return result;
@@ -3002,7 +2822,7 @@ static void ipa3_teardown_apps_pipes(void)
 	ipa3_teardown_sys_pipe(ipa3_ctx->clnt_hdl_data_in);
 	__ipa3_del_rt_rule(ipa3_ctx->dflt_v6_rt_rule_hdl);
 	__ipa3_del_rt_rule(ipa3_ctx->dflt_v4_rt_rule_hdl);
-	__ipa3_del_hdr(ipa3_ctx->excp_hdr_hdl);
+	__ipa3_del_hdr(ipa3_ctx->excp_hdr_hdl, false);
 	ipa3_teardown_sys_pipe(ipa3_ctx->clnt_hdl_cmd);
 }
 

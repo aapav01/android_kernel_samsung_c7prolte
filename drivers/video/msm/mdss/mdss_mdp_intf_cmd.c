@@ -21,6 +21,9 @@
 #include "mdss_debug.h"
 #include "mdss_mdp_trace.h"
 #include "mdss_dsi_clk.h"
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+#include "samsung/ss_dsi_panel_common.h"
+#endif
 
 #define MAX_RECOVERY_TRIALS 10
 #define MAX_SESSIONS 2
@@ -731,10 +734,6 @@ int mdss_mdp_resource_control(struct mdss_mdp_ctl *ctl, u32 sw_event)
 		break;
 	case MDP_RSRC_CTL_EVENT_STOP:
 
-		/* Cancel early wakeup Work Item */
-		if (cancel_work_sync(&ctx->early_wakeup_clk_work))
-			pr_debug("early wakeup work canceled\n");
-
 		/* If we are already OFF, just return */
 		if (mdp5_data->resources_state ==
 				MDP_RSRC_CTL_STATE_OFF) {
@@ -780,6 +779,10 @@ int mdss_mdp_resource_control(struct mdss_mdp_ctl *ctl, u32 sw_event)
 				pr_debug("%s unexpected OFF state\n",
 					__func__);
 		}
+
+		/* Cancel early wakeup Work Item */
+		if (cancel_work_sync(&ctx->early_wakeup_clk_work))
+			pr_debug("early wakeup work canceled\n");
 
 		mutex_lock(&ctl->rsrc_lock);
 		MDSS_XLOG(ctl->num, mdp5_data->resources_state, sw_event, 0x33);
@@ -1812,6 +1815,12 @@ int mdss_mdp_cmd_reconfigure_splash_done(struct mdss_mdp_ctl *ctl,
 
 	clk_ctrl.state = MDSS_DSI_CLK_OFF;
 	clk_ctrl.client = DSI_CLK_REQ_MDP_CLIENT;
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	/* Turning off mdp to re-initialize the mdp */
+	mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_BLANK, NULL, false);
+#endif
+
 	if (sctl) {
 		u32 flags = CTL_INTF_EVENT_FLAG_SKIP_BROADCAST;
 
@@ -1824,6 +1833,11 @@ int mdss_mdp_cmd_reconfigure_splash_done(struct mdss_mdp_ctl *ctl,
 
 	mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_PANEL_CLK_CTRL,
 		(void *)&clk_ctrl, CTL_INTF_EVENT_FLAG_SKIP_BROADCAST);
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	/* Turning off panel to initialize panel init-seq at kick-off*/
+	mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_PANEL_OFF, NULL, false);
+#endif
 
 	pdata->panel_info.cont_splash_enabled = 0;
 	if (sctl)
@@ -1840,6 +1854,9 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 	struct mdss_panel_data *pdata;
 	unsigned long flags;
 	int rc = 0;
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	struct samsung_display_driver_data *vdd = samsung_get_vdd();
+#endif
 
 	ctx = (struct mdss_mdp_cmd_ctx *) ctl->intf_ctx[MASTER_CTX];
 	if (!ctx) {
@@ -1888,10 +1905,16 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 				ctl->num, rc, ctx->pp_timeout_report_cnt,
 				atomic_read(&ctx->koff_cnt));
 		if (ctx->pp_timeout_report_cnt == 0) {
-			MDSS_XLOG(0xbad);
-			MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl", "dsi0_phy",
-				"dsi1_ctrl", "dsi1_phy", "vbif", "vbif_nrt",
-				"dbg_bus", "vbif_dbg_bus", "panic");
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+			if (vdd->debug_data->panic_on_pptimeout) {
+				WARN(1, "cmd kickoff timed out (%d) ctl=%d\n", rc, ctl->num);
+				MDSS_XLOG(0xbad);
+				MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl", "dsi0_phy",
+						"dsi1_ctrl", "dsi1_phy", "vbif", "vbif_nrt",
+						"dbg_bus", "vbif_dbg_bus", "panic");
+			} else
+#endif
+			pr_err("cmd kickoff timed out (%d) ctl=%d\n", rc, ctl->num);
 		} else if (ctx->pp_timeout_report_cnt == MAX_RECOVERY_TRIALS) {
 			MDSS_XLOG(0xbad2);
 			MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl", "dsi0_phy",
@@ -2044,11 +2067,11 @@ static int mdss_mdp_cmd_panel_on(struct mdss_mdp_ctl *ctl,
 					NULL, CTL_INTF_EVENT_FLAG_DEFAULT);
 			WARN(rc, "intf %d panel on error (%d)\n",
 					ctl->intf_num, rc);
-
-			rc = mdss_mdp_tearcheck_enable(ctl, true);
-			WARN(rc, "intf %d tearcheck enable error (%d)\n",
-					ctl->intf_num, rc);
 		}
+
+		rc = mdss_mdp_tearcheck_enable(ctl, true);
+		WARN(rc, "intf %d tearcheck enable error (%d)\n",
+				ctl->intf_num, rc);
 
 		ctx->panel_power_state = MDSS_PANEL_POWER_ON;
 		if (sctx)
@@ -2645,6 +2668,15 @@ static int mdss_mdp_cmd_kickoff(struct mdss_mdp_ctl *ctl, void *arg)
 		mctl = mdss_mdp_get_main_ctl(ctl);
 	mdss_mdp_cmd_dsc_reconfig(mctl);
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	/* send recovery pck before sending image date (for ESD recovery) */
+	mdss_mdp_ctl_intf_event(ctl, MDSS_SAMSUNG_EVENT_PANEL_ESD_RECOVERY,
+		NULL, CTL_INTF_EVENT_FLAG_SKIP_BROADCAST);
+	/* MULTI_RESOLUTION	*/
+	mdss_mdp_ctl_intf_event(ctl, MDSS_SAMSUNG_EVENT_MULTI_RESOLUTION,
+		NULL, CTL_INTF_EVENT_FLAG_SKIP_BROADCAST);
+#endif
+
 	mdss_mdp_cmd_set_partial_roi(ctl);
 
 	/*
@@ -2797,7 +2829,12 @@ int mdss_mdp_cmd_ctx_stop(struct mdss_mdp_ctl *ctl,
 	flush_work(&ctx->pp_done_work);
 
 	if (mdss_panel_is_power_off(panel_power_state) ||
-	    mdss_panel_is_power_on_ulp(panel_power_state))
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	    mdss_panel_is_power_on_ulp(panel_power_state)|| 
+		ctl->pending_mode_switch != SWITCH_MODE_UNKNOWN)
+#else
+		mdss_panel_is_power_on_ulp(panel_power_state))
+#endif
 		mdss_mdp_tearcheck_enable(ctl, false);
 
 	if (mdss_panel_is_power_on(panel_power_state)) {
@@ -2956,6 +2993,11 @@ int mdss_mdp_cmd_stop(struct mdss_mdp_ctl *ctl, int panel_power_state)
 			if (sctx)
 				sctx->intf_stopped = 0;
 
+			/*
+			 * Tearcheck was disabled while entering LP2 state.
+			 * Enable it back to allow updates in LP1 state.
+			 */
+			mdss_mdp_tearcheck_enable(ctl, true);
 			goto end;
 		}
 	}
@@ -3146,6 +3188,11 @@ static int mdss_mdp_cmd_ctx_setup(struct mdss_mdp_ctl *ctl,
 	mdss_mdp_set_intr_callback(MDSS_MDP_IRQ_PING_PONG_WR_PTR,
 		ctx->default_pp_num, mdss_mdp_cmd_writeptr_done, ctl);
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	if (ctl->pending_mode_switch != SWITCH_MODE_UNKNOWN) 
+		mdss_mdp_tearcheck_enable(ctl, true); 
+#endif
+
 	ret = mdss_mdp_cmd_tearcheck_setup(ctx, false);
 	if (ret)
 		pr_err("tearcheck setup failed\n");
@@ -3335,8 +3382,6 @@ void mdss_mdp_switch_to_vid_mode(struct mdss_mdp_ctl *ctl, int prep)
 static int mdss_mdp_cmd_reconfigure(struct mdss_mdp_ctl *ctl,
 		enum dynamic_switch_modes mode, bool prep)
 {
-	struct dsi_panel_clk_ctrl clk_ctrl;
-	int ret, rc = 0;
 
 	if (mdss_mdp_ctl_is_power_off(ctl))
 		return 0;
@@ -3348,41 +3393,39 @@ static int mdss_mdp_cmd_reconfigure(struct mdss_mdp_ctl *ctl,
 		mdss_mdp_switch_to_vid_mode(ctl, prep);
 	} else if (mode == SWITCH_RESOLUTION) {
 		if (prep) {
-			/* make sure any pending transfer is finished */
-			ret = mdss_mdp_cmd_wait4pingpong(ctl, NULL);
-			if (ret)
-				return ret;
+			mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
 
 			/*
-			 * keep a ref count on clocks to prevent them from
-			 * being disabled while switch happens
+			 * Setup DSC conifg early, as DSI configuration during
+			 * resolution switch would rely on DSC params for
+			 * stream configs.
+ 			 */
+			mdss_mdp_cmd_dsc_reconfig(ctl);
+			/*
+			 * Make explicit cmd_panel_on call, when dynamic
+			 * resolution switch request comes before cont-splash
+			 * handoff, to match the ctl_stop/ctl_start done
+			 * during the reconfiguration.
 			 */
-			mdss_bus_bandwidth_ctrl(true);
-			rc = mdss_iommu_ctrl(1);
-			if (IS_ERR_VALUE(rc))
-				pr_err("IOMMU attach failed\n");
+			if (ctl->switch_with_handoff) {
+				struct mdss_mdp_cmd_ctx *ctx;
+				struct mdss_mdp_ctl *sctl;
 
-			clk_ctrl.state = MDSS_DSI_CLK_ON;
-			clk_ctrl.client = DSI_CLK_REQ_MDP_CLIENT;
-			mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
-			mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_PANEL_CLK_CTRL,
-					(void *)&clk_ctrl,
-					CTL_INTF_EVENT_FLAG_DEFAULT);
+				ctx = (struct mdss_mdp_cmd_ctx *)
+					ctl->intf_ctx[MASTER_CTX];
+				if (ctx &&
+				     __mdss_mdp_cmd_is_panel_power_off(ctx)) {
+					sctl = mdss_mdp_get_split_ctl(ctl);
+					mdss_mdp_cmd_panel_on(ctl, sctl);
+				}
+				ctl->switch_with_handoff = false;
+			}
 
 			mdss_mdp_ctl_stop(ctl, MDSS_PANEL_POWER_OFF);
 			mdss_mdp_ctl_intf_event(ctl,
-					MDSS_EVENT_DSI_DYNAMIC_SWITCH,
-					(void *) mode,
-					CTL_INTF_EVENT_FLAG_DEFAULT);
+				MDSS_EVENT_DSI_DYNAMIC_SWITCH,
+				(void *) mode, CTL_INTF_EVENT_FLAG_DEFAULT);					
 		} else {
-			/* release ref count after switch is complete */
-			clk_ctrl.state = MDSS_DSI_CLK_OFF;
-			clk_ctrl.client = DSI_CLK_REQ_MDP_CLIENT;
-			mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_PANEL_CLK_CTRL,
-					(void *)&clk_ctrl,
-					CTL_INTF_EVENT_FLAG_DEFAULT);
-			mdss_iommu_ctrl(0);
-			mdss_bus_bandwidth_ctrl(false);
 			mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
 		}
 	}

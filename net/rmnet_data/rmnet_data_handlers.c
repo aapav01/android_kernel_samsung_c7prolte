@@ -697,7 +697,7 @@ void rmnet_egress_handler(struct sk_buff *skb,
 	rc = dev_queue_xmit(skb);
 	if (rc != 0) {
 		LOGD("Failed to queue packet for transmission on [%s]",
-		      skb->dev->name);
+		      ep->egress_dev->name);
 	}
 	rmnet_stats_queue_xmit(rc, RMNET_STATS_QUEUE_XMIT_EGRESS);
 }

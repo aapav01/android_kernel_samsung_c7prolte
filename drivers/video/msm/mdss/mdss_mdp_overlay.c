@@ -28,6 +28,10 @@
 #include <linux/sw_sync.h>
 #include <linux/kmemleak.h>
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+#include "../../../video/msm/mdss/samsung/ss_dsi_panel_common.h" /* UTIL HEADER */
+#endif
+
 #include <soc/qcom/event_timer.h>
 #include <linux/msm-bus.h>
 #include "mdss.h"
@@ -986,6 +990,24 @@ skip_reconfigure:
 
 	mdss_mdp_pipe_unmap(pipe);
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	pr_debug("L_mixer:%d R_mixer:%d %s z:%d format:%d flag:0x%x src.x:%d y:%d w:%d h:%d "
+			"des_rect.x:%d y:%d w:%d h:%d mdss\n",
+			pipe->mixer_left ? pipe->mixer_left->num : -1,
+			pipe->mixer_right? pipe->mixer_right->num : -1,
+			pipe->ndx == BIT(0) ? "VG0" : pipe->ndx == BIT(1) ? "VG1" :
+			pipe->ndx == BIT(2) ? "VG2" : pipe->ndx == BIT(3) ? "RGB0" :
+			pipe->ndx == BIT(4) ? "RGB1" : pipe->ndx == BIT(5) ? "RGB2" :
+			pipe->ndx == BIT(6) ? "DMA0" : pipe->ndx == BIT(7) ? "DMA1":
+			pipe->ndx == BIT(8) ? "VG3" : pipe->ndx == BIT(9) ? "RGB3":
+			pipe->ndx == BIT(10) ? "CURSOR0" : pipe->ndx == BIT(11) ? "CURSOR1" : "MAX_SSPP",
+			pipe->mixer_stage - MDSS_MDP_STAGE_0,
+			pipe->src_fmt->format,
+			pipe->flags,
+			pipe->src.x, pipe->src.y, pipe->src.w, pipe->src.h,
+			pipe->dst.x, pipe->dst.y, pipe->dst.w, pipe->dst.h);
+#endif
+
 	return ret;
 exit_fail:
 	mdss_mdp_pipe_unmap(pipe);
@@ -1555,6 +1577,24 @@ static int __overlay_queue_pipes(struct msm_fb_data_type *mfd)
 			if (buf)
 				__pipe_buf_mark_cleanup(mfd, buf);
 		}
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+		pr_debug("L_mixer:%d R_mixer:%d %s z:%d format:%d flag:0x%x src.x:%d y:%d w:%d h:%d "
+			"des_rect.x:%d y:%d w:%d h:%d mdss\n",
+			pipe->mixer_left ? pipe->mixer_left->num : -1,
+			pipe->mixer_right? pipe->mixer_right->num : -1,
+			pipe->ndx == BIT(0) ? "VG0" : pipe->ndx == BIT(1) ? "VG1" :
+			pipe->ndx == BIT(2) ? "VG2" : pipe->ndx == BIT(3) ? "RGB0" :
+			pipe->ndx == BIT(4) ? "RGB1" : pipe->ndx == BIT(5) ? "RGB2" :
+			pipe->ndx == BIT(6) ? "DMA0" : pipe->ndx == BIT(7) ? "DMA1":
+			pipe->ndx == BIT(8) ? "VG3" : pipe->ndx == BIT(9) ? "RGB3":
+			pipe->ndx == BIT(10) ? "CURSOR0" : pipe->ndx == BIT(11) ? "CURSOR1" : "MAX_SSPP",
+			pipe->mixer_stage - MDSS_MDP_STAGE_0,
+			pipe->src_fmt->format,
+			pipe->flags,
+			pipe->src.x, pipe->src.y, pipe->src.w, pipe->src.h,
+			pipe->dst.x, pipe->dst.y, pipe->dst.w, pipe->dst.h);
+#endif
 	}
 
 	return 0;
@@ -1684,8 +1724,9 @@ int mdss_mode_switch(struct msm_fb_data_type *mfd, u32 mode)
 {
 	struct mdss_rect l_roi, r_roi;
 	struct mdss_mdp_ctl *ctl = mfd_to_ctl(mfd);
+	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(mfd);
 	struct mdss_mdp_ctl *sctl;
-	int rc;
+	int rc = 0;
 
 	pr_debug("fb%d switch to mode=%x\n", mfd->index, mode);
 	ATRACE_FUNC();
@@ -1698,9 +1739,11 @@ int mdss_mode_switch(struct msm_fb_data_type *mfd, u32 mode)
 	/* No need for mode validation. It has been done in ioctl call */
 	if (mode == SWITCH_RESOLUTION) {
 		if (ctl->ops.reconfigure) {
-			rc = ctl->ops.reconfigure(ctl, mode, 1);
-			if (rc)
-				return rc;
+		mutex_lock(&mdp5_data->ov_lock);
+		rc = ctl->ops.reconfigure(ctl, mode, 1);
+		mutex_unlock(&mdp5_data->ov_lock);
+		if (rc)
+			return rc;
 		/*
 		 * For Video mode panels, reconfigure is not defined.
 		 * So doing an explicit ctrl stop during resolution switch
@@ -1823,7 +1866,13 @@ static void __validate_and_set_roi(struct msm_fb_data_type *mfd,
 		l_roi.x, l_roi.y, l_roi.w, l_roi.h,
 		r_roi.x, r_roi.y, r_roi.w, r_roi.h);
 
-	if (!ctl->panel_data->panel_info.partial_update_enabled)
+	/*
+	 * Configure full ROI
+	 * - If partial update is disabled
+	 * - If it is the first frame update after dynamic resolution switch
+	 */
+	if (!ctl->panel_data->panel_info.partial_update_enabled
+			|| (ctl->pending_mode_switch == SWITCH_RESOLUTION))
 		goto set_roi;
 
 	skip_partial_update = false;
@@ -1897,6 +1946,7 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 	struct mdss_mdp_ctl *ctl = mfd_to_ctl(mfd);
 	int ret = 0;
 	int sd_in_pipe = 0;
+	int rgb_sd = 0;
 	struct mdss_mdp_commit_cb commit_cb;
 
 	if (!ctl)
@@ -1937,7 +1987,19 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 			sd_in_pipe = 1;
 			pr_debug("Secure pipe: %u : %08X\n",
 					pipe->num, pipe->flags);
+				/* check First frame of Secure display (RGB and FB0) to avoid to be flushed (W/A of distorted image on SSPAY) */
+			if(! pipe->src_fmt->is_yuv && !mfd->index) {
+				rgb_sd = 1;
+			}
 		}
+	}
+		/* check First frame of Secure display (RGB and FB0) to avoid to be flushed (W/A of distorted image on SSPAY) */
+	if (sd_in_pipe && rgb_sd) {
+		if(!mdp5_data->sd_enabled)
+			mfd->sd_framecnt =1;
+		else mfd->sd_framecnt ++;
+	} else {
+		mfd->sd_framecnt =0;
 	}
 
 	/*
@@ -2055,6 +2117,11 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 	}
 
 	mdss_fb_update_notify_update(mfd);
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	mdss_mdp_ctl_intf_event(mdp5_data->ctl, MDSS_SAMSUNG_EVENT_FRAME_UPDATE, NULL, false);
+#endif
+
 commit_fail:
 	ATRACE_BEGIN("overlay_cleanup");
 	mdss_mdp_overlay_cleanup(mfd, &mdp5_data->pipes_destroy);
@@ -3300,20 +3367,18 @@ static ssize_t mdss_mdp_misr_store(struct device *dev,
 		req.frame_count = 1;
 	} else {
 		pr_err("misr not supported fo this fb:%d\n", mfd->index);
-		rc = -ENODEV;
-		return rc;
 	}
 
 	if (enable_misr) {
 		mdss_misr_set(mdata, &req , ctl);
 
-		if ((ctl->intf_type == MDSS_INTF_DSI) && is_panel_split(mfd))
+		if (is_panel_split(mfd))
 			mdss_misr_set(mdata, &sreq , ctl);
 
 	} else {
 		mdss_misr_disable(mdata, &req, ctl);
 
-		if ((ctl->intf_type == MDSS_INTF_DSI) && is_panel_split(mfd))
+		if (is_panel_split(mfd))
 			mdss_misr_disable(mdata, &sreq , ctl);
 	}
 
@@ -4226,6 +4291,22 @@ static int mdss_mdp_overlay_precommit(struct msm_fb_data_type *mfd)
 				mfd->index, ret);
 		ret = -EPIPE;
 	}
+
+	/*
+	 * If we are in process of mode switch we may have an invalid state.
+	 * We can allow commit to happen if there are no pipes attached as only
+	 * border color will be seen regardless of resolution or mode.
+	 */
+	if ((mfd->switch_state != MDSS_MDP_NO_UPDATE_REQUESTED) &&
+			(mfd->switch_state != MDSS_MDP_WAIT_FOR_COMMIT)) {
+		if (list_empty(&mdp5_data->pipes_used)) {
+			mfd->switch_state = MDSS_MDP_WAIT_FOR_COMMIT;
+		} else {
+			pr_warn("Invalid commit on fb%d with state=%d\n",
+					mfd->index, mfd->switch_state);
+			ret = -EINVAL;
+		}
+	}
 	mutex_unlock(&mdp5_data->ov_lock);
 
 	return ret;
@@ -4768,6 +4849,60 @@ static void mdss_mdp_set_lm_flag(struct msm_fb_data_type *mfd)
 	}
 }
 
+
+static void mdss_mdp_handle_invalid_switch_state(struct msm_fb_data_type *mfd)
+{
+	int rc = 0;
+	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(mfd);
+	struct mdss_mdp_ctl *ctl = mdp5_data->ctl;
+	struct mdss_mdp_ctl *sctl = mdss_mdp_get_split_ctl(ctl);
+	struct mdss_mdp_data *buf, *tmpbuf;
+
+	mfd->switch_state = MDSS_MDP_NO_UPDATE_REQUESTED;
+
+	/*
+	 * Handle only for cmd mode panels as for video mode, buffers
+	 * cannot be freed at this point. Needs revisting to handle the
+	 * use case for video mode panels.
+	 */
+	if (mfd->panel_info->type == MIPI_CMD_PANEL) {
+		if (ctl->ops.wait_pingpong)
+			rc = ctl->ops.wait_pingpong(ctl, NULL);
+		if (!rc && sctl && sctl->ops.wait_pingpong)
+			rc = sctl->ops.wait_pingpong(sctl, NULL);
+		if (rc) {
+			pr_err("wait for pp failed\n");
+			return;
+		}
+
+		mutex_lock(&mdp5_data->list_lock);
+		list_for_each_entry_safe(buf, tmpbuf,
+				&mdp5_data->bufs_used, buf_list)
+			list_move(&buf->buf_list, &mdp5_data->bufs_freelist);
+		mutex_unlock(&mdp5_data->list_lock);
+	}
+}
+
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+struct samsung_display_driver_data* mdss_samsung_get_vdd(struct mdss_mdp_ctl *ctl)
+{
+	struct samsung_display_driver_data *vdd = NULL;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+
+	ctrl_pdata = container_of(ctl->panel_data, struct mdss_dsi_ctrl_pdata,
+				panel_data);
+
+	vdd = check_valid_ctrl(ctrl_pdata);
+	if (IS_ERR_OR_NULL(vdd)) {
+		pr_err("%s: Invalid data ctrl : 0x%zx\n", __func__, (size_t)vdd);
+		return NULL;
+	}
+
+	return vdd;
+}
+#endif
+
 static int mdss_mdp_overlay_on(struct msm_fb_data_type *mfd)
 {
 	int rc;
@@ -4887,6 +5022,10 @@ static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd)
 	struct mdss_mdp_mixer *mixer;
 	int need_cleanup;
 	int retire_cnt;
+	bool destroy_ctl = false;
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	struct samsung_display_driver_data *vdd = NULL;
+#endif
 
 	if (!mfd)
 		return -ENODEV;
@@ -4900,6 +5039,10 @@ static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd)
 		pr_err("ctl not initialized\n");
 		return -ENODEV;
 	}
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	vdd = mdss_samsung_get_vdd(mdp5_data->ctl);
+#endif
 
 	if (!mdss_mdp_ctl_is_power_on(mdp5_data->ctl)) {
 		if (mfd->panel_reconfig) {
@@ -4943,10 +5086,24 @@ static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd)
 	mutex_unlock(&mdp5_data->list_lock);
 	mutex_unlock(&mdp5_data->ov_lock);
 
+	destroy_ctl = !mfd->ref_cnt || mfd->panel_reconfig;
+
+	mutex_lock(&mfd->switch_lock);
+	if (mfd->switch_state != MDSS_MDP_NO_UPDATE_REQUESTED) {
+		destroy_ctl = true;
+		need_cleanup = false;
+		pr_warn("fb%d blank while mode switch (%d) in progress\n",
+				mfd->index, mfd->switch_state);
+		mdss_mdp_handle_invalid_switch_state(mfd);
+	}
+	mutex_unlock(&mfd->switch_lock);
+
 	if (need_cleanup) {
 		pr_debug("cleaning up pipes on fb%d\n", mfd->index);
 		mdss_mdp_overlay_kickoff(mfd, NULL);
 	}
+
+ctl_stop:
 
 	/*
 	 * If retire fences are still active wait for a vsync time
@@ -4978,7 +5135,6 @@ static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd)
 		flush_work(&mdp5_data->retire_work);
 	}
 
-ctl_stop:
 	mutex_lock(&mdp5_data->ov_lock);
 	/* set the correct pipe_mapped before ctl_stop */
 	mdss_mdp_mixer_update_pipe_map(mdp5_data->ctl,
@@ -4996,7 +5152,7 @@ ctl_stop:
 			mdss_mdp_ctl_notifier_unregister(mdp5_data->ctl,
 					&mfd->mdp_sync_pt_data.notifier);
 
-			if (!mfd->ref_cnt || mfd->panel_reconfig) {
+			if (destroy_ctl) {
 				mdp5_data->borderfill_enable = false;
 				mdss_mdp_ctl_destroy(mdp5_data->ctl);
 				mdp5_data->ctl = NULL;
@@ -5299,6 +5455,7 @@ static int mdss_mdp_update_panel_info(struct msm_fb_data_type *mfd,
 	int ret = 0;
 	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(mfd);
 	struct mdss_mdp_ctl *ctl = mdp5_data->ctl;
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	struct mdss_panel_data *pdata;
 	struct mdss_mdp_ctl *sctl;
 
@@ -5331,6 +5488,12 @@ static int mdss_mdp_update_panel_info(struct msm_fb_data_type *mfd,
 		 * destroying current ctrl sturcture.
 		 */
 		mdss_mdp_ctl_reconfig(ctl, pdata);
+		/*
+		 * Set flag when dynamic resolution switch happens before
+		 * handoff of cont-splash
+		 */
+		if (mdata->handoff_pending)
+			ctl->switch_with_handoff = true;
 
 		sctl = mdss_mdp_get_split_ctl(ctl);
 		if (sctl) {
@@ -5605,7 +5768,7 @@ static int mdss_mdp_scaler_lut_init(struct mdss_data_type *mdata,
 		struct mdp_scale_luts_info *lut_tbl)
 {
 	struct mdss_mdp_qseed3_lut_tbl *qseed3_lut_tbl;
-	int ret;
+	int ret = 0;
 
 	if (!mdata->scaler_off)
 		return -EFAULT;

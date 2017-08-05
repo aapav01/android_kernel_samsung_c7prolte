@@ -175,6 +175,24 @@ config REGULATOR_BCM590XX
 	  BCM590xx PMUs. This will enable support for the software
 	  controllable LDO/Switching regulators.
 
+config REGULATOR_MADERA_LDO1
+	tristate "Cirrus Logic Madera codecs LDO1 regulator"
+	depends on MFD_MADERA
+	depends on SND_SOC
+	help
+	  For Cirrus Logic Madera class codecs, if you want to use the
+	  internal LDO1 regulator to supply DCVDD you need to include this
+	  driver. If you are using an external DCVDD regulator or the codec
+	  does not have an LDO1 regulator you do not need this driver.
+
+config REGULATOR_MADERA_MICSUPP
+	tristate "Cirrus Logic Madera codecs mic supply regulator"
+	depends on MFD_MADERA
+	depends on SND_SOC
+	help
+	  Support for the microphone supply regulator on Cirrus Logic
+	  Madera class codecs
+
 config REGULATOR_DA903X
 	tristate "Dialog Semiconductor DA9030/DA9034 regulators"
 	depends on PMIC_DA903X
@@ -897,6 +915,19 @@ config REGULATOR_KRYO
 	  can be configured for use when certain power constraints are met.
 	  Say yes to support management of LDO and BHS modes for the clusters in the
 	  CPU subsystem.
+
+config REGULATOR_SM5703
+	depends on MFD_SM5703
+	tristate "SM5703 LDO and Buck"
+	help
+	 Say y here to support the regulators found on the Siliconmitus SM5703 I/F PMIC.
+
+config REGULATOR_SM5705
+	tristate "SM705 regulator"
+	depends on MFD_SM5705
+	help
+	 This driver controls a SM5705 regulator
+          via I2C bus. SM5705 is comprised of USBLDOs.
 
 endif
 

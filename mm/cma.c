@@ -349,7 +349,7 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align)
 	unsigned long mask, pfn, start = 0;
 	unsigned long bitmap_maxno, bitmap_no, bitmap_count;
 	struct page *page = NULL;
-	int ret;
+	int ret = -ENOMEM;
 	int retry_after_sleep = 0;
 
 	if (!cma || !cma->count)
@@ -421,6 +421,12 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align)
 	}
 
 	trace_cma_alloc(page ? pfn : -1UL, page, count, align);
+
+	if (ret){
+		pr_info("%s: alloc failed, req-size: %zu pages, ret: %d\n",
+			__func__, count, ret);
+		dump_stack();
+	}
 
 	pr_debug("%s(): returned %p\n", __func__, page);
 	return page;

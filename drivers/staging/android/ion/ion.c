@@ -16,6 +16,7 @@
  *
  */
 
+#include <linux/atomic.h>
 #include <linux/err.h>
 #include <linux/file.h>
 #include <linux/freezer.h>
@@ -190,6 +191,7 @@ static struct ion_buffer *ion_buffer_create(struct ion_heap *heap,
 	struct sg_table *table;
 	struct scatterlist *sg;
 	int i, ret;
+	int nr_alloc_cur, nr_alloc_peak;
 
 	buffer = kzalloc(sizeof(struct ion_buffer), GFP_KERNEL);
 	if (!buffer)
@@ -265,7 +267,10 @@ static struct ion_buffer *ion_buffer_create(struct ion_heap *heap,
 	mutex_lock(&dev->buffer_lock);
 	ion_buffer_add(dev, buffer);
 	mutex_unlock(&dev->buffer_lock);
-	atomic_add(len, &heap->total_allocated);
+	nr_alloc_cur = atomic_add_return(len, &heap->total_allocated);
+	nr_alloc_peak = atomic_read(&heap->total_allocated_peak);
+	if (nr_alloc_cur > nr_alloc_peak)
+		atomic_set(&heap->total_allocated_peak, nr_alloc_cur);
 	return buffer;
 
 err:
@@ -406,6 +411,15 @@ static void ion_handle_get(struct ion_handle *handle)
 	kref_get(&handle->ref);
 }
 
+/* Must hold the client lock */
+static struct ion_handle* ion_handle_get_check_overflow(struct ion_handle *handle)
+{
+	if (atomic_read(&handle->ref.refcount) + 1 == 0)
+		return ERR_PTR(-EOVERFLOW);
+	ion_handle_get(handle);
+	return handle;
+}
+
 static int ion_handle_put_nolock(struct ion_handle *handle)
 {
 	int ret;
@@ -452,9 +466,9 @@ static struct ion_handle *ion_handle_get_by_id_nolock(struct ion_client *client,
 
 	handle = idr_find(&client->idr, id);
 	if (handle)
-		ion_handle_get(handle);
+		return ion_handle_get_check_overflow(handle);
 
-	return handle ? handle : ERR_PTR(-EINVAL);
+	return ERR_PTR(-EINVAL);
 }
 
 struct ion_handle *ion_handle_get_by_id(struct ion_client *client,
@@ -507,9 +521,9 @@ static int ion_handle_add(struct ion_client *client, struct ion_handle *handle)
 	return 0;
 }
 
-struct ion_handle *ion_alloc(struct ion_client *client, size_t len,
-			     size_t align, unsigned int heap_id_mask,
-			     unsigned int flags)
+static struct ion_handle *__ion_alloc(struct ion_client *client, size_t len,
+		size_t align, unsigned int heap_id_mask,
+		unsigned int flags, bool grab_handle)
 {
 	struct ion_handle *handle;
 	struct ion_device *dev = client->dev;
@@ -604,6 +618,8 @@ struct ion_handle *ion_alloc(struct ion_client *client, size_t len,
 		return handle;
 
 	mutex_lock(&client->lock);
+	if (grab_handle)
+		ion_handle_get(handle);
 	ret = ion_handle_add(client, handle);
 	mutex_unlock(&client->lock);
 	if (ret) {
@@ -612,6 +628,13 @@ struct ion_handle *ion_alloc(struct ion_client *client, size_t len,
 	}
 
 	return handle;
+}
+
+struct ion_handle *ion_alloc(struct ion_client *client, size_t len,
+              size_t align, unsigned int heap_id_mask,
+              unsigned int flags)
+{
+	return __ion_alloc(client, len, align, heap_id_mask, flags, false);
 }
 EXPORT_SYMBOL(ion_alloc);
 
@@ -802,7 +825,7 @@ static int ion_debug_client_show(struct seq_file *s, void *unused)
 		struct ion_handle *handle = rb_entry(n, struct ion_handle,
 						     node);
 
-		seq_printf(s, "%16.16s: %16zx : %16d : %12p",
+		 seq_printf(s, "%16.16s: %16zx : %16d : %12pK",
 				handle->buffer->heap->name,
 				handle->buffer->size,
 				atomic_read(&handle->ref.refcount),
@@ -940,7 +963,6 @@ void ion_client_destroy(struct ion_client *client)
 	struct rb_node *n;
 
 	pr_debug("%s: %d\n", __func__, __LINE__);
-	mutex_lock(&client->lock);
 	while ((n = rb_first(&client->handles))) {
 		struct ion_handle *handle = rb_entry(n, struct ion_handle,
 						     node);
@@ -948,7 +970,6 @@ void ion_client_destroy(struct ion_client *client)
 	}
 
 	idr_destroy(&client->idr);
-	mutex_unlock(&client->lock);
 
 	down_write(&dev->lock);
 	if (client->task)
@@ -1398,7 +1419,7 @@ struct ion_handle *ion_import_dma_buf(struct ion_client *client, int fd)
 	/* if a handle exists for this buffer just take a reference to it */
 	handle = ion_handle_lookup(client, buffer);
 	if (!IS_ERR(handle)) {
-		ion_handle_get(handle);
+		handle = ion_handle_get_check_overflow(handle);
 		mutex_unlock(&client->lock);
 		goto end;
 	}
@@ -1488,10 +1509,10 @@ static long ion_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	{
 		struct ion_handle *handle;
 
-		handle = ion_alloc(client, data.allocation.len,
+		handle = __ion_alloc(client, data.allocation.len,
 						data.allocation.align,
 						data.allocation.heap_id_mask,
-						data.allocation.flags);
+						data.allocation.flags, true);
 		if (IS_ERR(handle))
 			return PTR_ERR(handle);
 
@@ -1568,11 +1589,15 @@ static long ion_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	if (dir & _IOC_READ) {
 		if (copy_to_user((void __user *)arg, &data, _IOC_SIZE(cmd))) {
-			if (cleanup_handle)
+			if (cleanup_handle) {
 				ion_free(client, cleanup_handle);
+				ion_handle_put(cleanup_handle);
+			}
 			return -EFAULT;
 		}
 	}
+	if (cleanup_handle)
+		ion_handle_put(cleanup_handle);
 	return ret;
 }
 
@@ -1781,6 +1806,8 @@ static int ion_debug_heap_show(struct seq_file *s, void *unused)
 	seq_printf(s, "%16.s %16zu\n", "total orphaned",
 		   total_orphaned_size);
 	seq_printf(s, "%16.s %16zu\n", "total ", total_size);
+	seq_printf(s, "%16.s %16u\n", "peak allocated",
+		atomic_read(&heap->total_allocated_peak));
 	if (heap->flags & ION_HEAP_FLAG_DEFER_FREE)
 		seq_printf(s, "%16.s %16zu\n", "deferred free",
 				heap->free_list_size);

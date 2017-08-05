@@ -22,6 +22,11 @@
 #include "mdss_mdp.h"
 #include "mdss_debug.h"
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+#include "samsung/ss_dsi_panel_common.h" /* UTIL HEADER */
+DEFINE_MUTEX(XLOG_DUMP_LOCK);
+#endif
+
 #ifdef CONFIG_FB_MSM_MDSS_XLOG_DEBUG
 #define XLOG_DEFAULT_ENABLE 1
 #else
@@ -405,7 +410,7 @@ static void mdss_dump_vbif_debug_bus(u32 bus_dump_flag,
 	pr_info("========End VBIF Debug bus=========\n");
 }
 
-static void mdss_dump_reg(const char *dump_name, u32 reg_dump_flag,
+void mdss_dump_reg(const char *dump_name, u32 reg_dump_flag,
 	char *addr, int len, u32 **dump_mem)
 {
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
@@ -449,9 +454,14 @@ static void mdss_dump_reg(const char *dump_name, u32 reg_dump_flag,
 		x8 = readl_relaxed(addr+0x8);
 		xc = readl_relaxed(addr+0xc);
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+		if (in_log)
+			pr_err("%04x : %08x %08x %08x %08x\n", i * 16, x0, x4, x8, xc);
+#else
 		if (in_log)
 			pr_info("%pK : %08x %08x %08x %08x\n", addr, x0, x4, x8,
 				xc);
+#endif
 
 		if (dump_addr && in_mem) {
 			dump_addr[i*4] = x0;
@@ -569,6 +579,7 @@ static void mdss_xlog_dump_array(struct mdss_debug_base *blk_arr[],
 	u32 len, bool dead, const char *name, bool dump_dbgbus,
 	bool dump_vbif_dbgbus)
 {
+#if !defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
 	int i;
 
 	for (i = 0; i < len; i++) {
@@ -576,8 +587,14 @@ static void mdss_xlog_dump_array(struct mdss_debug_base *blk_arr[],
 			mdss_dump_reg_by_ranges(blk_arr[i],
 				mdss_dbg_xlog.enable_reg_dump);
 	}
-
+#endif
 	mdss_xlog_dump_all();
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	mdss_samsung_dump_regs();
+	mdss_samsung_dsi_dump_regs(0);
+	mdss_samsung_dsi_dump_regs(1);
+#endif
 
 	if (dump_dbgbus)
 		mdss_dump_debug_bus(mdss_dbg_xlog.enable_dbgbus_dump,
@@ -616,11 +633,31 @@ void mdss_xlog_tout_handler_default(bool queue, const char *name, ...)
 	struct mdss_debug_base **blk_arr;
 	u32 blk_len;
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	MDSS_XLOG(0xffff, 0xffff, 0xffff, 0xffff, 0xffff);
+
+	mutex_lock(&XLOG_DUMP_LOCK);
+
+	if (!mdss_xlog_is_enabled(MDSS_XLOG_DEFAULT)) {
+		mutex_unlock(&XLOG_DUMP_LOCK);
+		return;
+	}
+
+	mdss_dbg_xlog.xlog_enable = 0;
+
+	if (queue && work_pending(&mdss_dbg_xlog.xlog_dump_work)) {
+		mutex_unlock(&XLOG_DUMP_LOCK);
+		return;
+	}
+
+	dump_stack();
+#else
 	if (!mdss_xlog_is_enabled(MDSS_XLOG_DEFAULT))
 		return;
 
 	if (queue && work_pending(&mdss_dbg_xlog.xlog_dump_work))
 		return;
+#endif
 
 	blk_arr = &mdss_dbg_xlog.blk_arr[0];
 	blk_len = ARRAY_SIZE(mdss_dbg_xlog.blk_arr);
@@ -660,6 +697,9 @@ void mdss_xlog_tout_handler_default(bool queue, const char *name, ...)
 		mdss_xlog_dump_array(blk_arr, blk_len, dead, name, dump_dbgbus,
 			dump_vbif_dbgbus);
 	}
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	mutex_unlock(&XLOG_DUMP_LOCK);
+#endif
 }
 
 static int mdss_xlog_dump_open(struct inode *inode, struct file *file)
@@ -690,6 +730,13 @@ static ssize_t mdss_xlog_dump_write(struct file *file,
 	const char __user *user_buf, size_t count, loff_t *ppos)
 {
 	mdss_dump_reg_all();
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	mdss_samsung_dsi_te_check();
+	mdss_samsung_dump_regs();
+	mdss_samsung_dsi_dump_regs(0);
+	mdss_samsung_dsi_dump_regs(1);
+#endif
 
 	mdss_xlog_dump_all();
 
@@ -746,6 +793,11 @@ int mdss_create_xlog_debug(struct mdss_debug_data *mdd)
 	pr_info("xlog_status: enable:%d, panic:%d, dump:%d\n",
 		mdss_dbg_xlog.xlog_enable, mdss_dbg_xlog.panic_on_err,
 		mdss_dbg_xlog.enable_reg_dump);
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	mdss_dbg_xlog.xlog_enable = MDSS_XLOG_DEFAULT | MDSS_XLOG_IOMMU \
+		| MDSS_XLOG_DBG | MDSS_XLOG_ALL;
+#endif
 
 	return 0;
 }
