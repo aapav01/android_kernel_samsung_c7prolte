@@ -124,7 +124,6 @@ struct qusb_phy {
 	void __iomem		*tune2_efuse_reg;
 	void __iomem		*ref_clk_base;
 	void __iomem		*tcsr_phy_clk_scheme_sel;
-	void __iomem		*tcsr_phy_lvl_shift_keeper;
 
 	struct clk		*ref_clk_src;
 	struct clk		*ref_clk;
@@ -140,6 +139,10 @@ struct qusb_phy {
 	int			vdd_levels[3]; /* none, low, high */
 	int			init_seq_len;
 	int			*qusb_phy_init_seq;
+#ifdef CONFIG_USB_HOST_NOTIFY
+	int			init_seq_len_host;
+	int			*qusb_phy_init_seq_host;
+#endif
 
 	u32			tune2_val;
 	int			tune2_efuse_bit_pos;
@@ -403,18 +406,13 @@ static int qusb_phy_update_dpdm(struct usb_phy *phy, int value)
 	case POWER_SUPPLY_DP_DM_DPF_DMF:
 		dev_dbg(phy->dev, "POWER_SUPPLY_DP_DM_DPF_DMF\n");
 		if (!qphy->rm_pulldown) {
-			ret = qusb_phy_enable_power(qphy, true);
-			if (ret >= 0) {
-				qphy->rm_pulldown = true;
-				dev_dbg(phy->dev, "DP_DM_F: rm_pulldown:%d\n",
-						qphy->rm_pulldown);
-			}
 
 			if (qphy->put_into_high_z_state) {
-				if (qphy->tcsr_phy_lvl_shift_keeper)
-					writel_relaxed(0x1,
-					       qphy->tcsr_phy_lvl_shift_keeper);
 
+				/* Bring up DVDD */
+				ret = qusb_phy_vdd(qphy, true);
+				if (ret < 0)
+					goto clk_error;
 				qusb_phy_gdsc(qphy, true);
 				qusb_phy_enable_clocks(qphy, true);
 
@@ -444,7 +442,16 @@ static int qusb_phy_update_dpdm(struct usb_phy *phy, int value)
 					qphy->base + QUSB2PHY_PORT_POWERDOWN);
 				/* Make sure that above write is completed */
 				wmb();
+			}
 
+			ret = qusb_phy_enable_power(qphy, true);
+			if (ret >= 0) {
+				qphy->rm_pulldown = true;
+				dev_dbg(phy->dev, "DP_DM_F: rm_pulldown:%d\n",
+						qphy->rm_pulldown);
+			}
+
+			if (qphy->put_into_high_z_state) {
 				qusb_phy_enable_clocks(qphy, false);
 				qusb_phy_gdsc(qphy, false);
 			}
@@ -486,9 +493,6 @@ static int qusb_phy_update_dpdm(struct usb_phy *phy, int value)
 			}
 
 			if (!qphy->cable_connected) {
-				if (qphy->tcsr_phy_lvl_shift_keeper)
-					writel_relaxed(0x0,
-					       qphy->tcsr_phy_lvl_shift_keeper);
 				dev_dbg(phy->dev, "turn off for HVDCP case\n");
 				ret = qusb_phy_enable_power(qphy, false);
 			}
@@ -768,9 +772,20 @@ static int qusb_phy_init(struct usb_phy *phy)
 	/* save reset value to override based on clk scheme */
 	reset_val = readl_relaxed(qphy->base + QUSB2PHY_PLL_TEST);
 
-	if (qphy->qusb_phy_init_seq)
-		qusb_phy_write_seq(qphy->base, qphy->qusb_phy_init_seq,
-				qphy->init_seq_len, 0);
+#ifdef CONFIG_USB_HOST_NOTIFY
+	if(qphy->phy.otg_mode == OTG_MODE_HOST) {
+		if (qphy->qusb_phy_init_seq_host)
+			qusb_phy_write_seq(qphy->base, qphy->qusb_phy_init_seq_host,
+					qphy->init_seq_len_host, 0);
+	} else {
+#endif
+		if (qphy->qusb_phy_init_seq)
+			qusb_phy_write_seq(qphy->base, qphy->qusb_phy_init_seq,
+					qphy->init_seq_len, 0);
+#ifdef CONFIG_USB_HOST_NOTIFY
+	}
+#endif
+
 
 	/*
 	 * Check for EFUSE value only if tune2_efuse_reg is available
@@ -1002,9 +1017,6 @@ static int qusb_phy_set_suspend(struct usb_phy *phy, int suspend)
 			wmb();
 
 			qusb_phy_enable_clocks(qphy, false);
-			if (qphy->tcsr_phy_lvl_shift_keeper)
-				writel_relaxed(0x0,
-					qphy->tcsr_phy_lvl_shift_keeper);
 			qusb_phy_enable_power(qphy, false);
 			/*
 			 * Set put_into_high_z_state to true so next USB
@@ -1026,9 +1038,6 @@ static int qusb_phy_set_suspend(struct usb_phy *phy, int suspend)
 				qphy->base + QUSB2PHY_PORT_INTR_CTRL);
 		} else {
 			qusb_phy_enable_power(qphy, true);
-			if (qphy->tcsr_phy_lvl_shift_keeper)
-				writel_relaxed(0x1,
-					qphy->tcsr_phy_lvl_shift_keeper);
 			qusb_phy_enable_clocks(qphy, true);
 		}
 		qphy->suspended = false;
@@ -1076,6 +1085,19 @@ static int qusb_phy_notify_connect(struct usb_phy *phy,
 	dev_dbg(phy->dev, "QUSB2 phy connect notification\n");
 	return 0;
 }
+
+#ifdef CONFIG_USB_HOST_NOTIFY
+static int qusb_phy_set_mode(struct usb_phy *phy,
+					enum usb_otg_mode mode)
+{
+	struct qusb_phy *qphy = container_of(phy, struct qusb_phy, phy);
+
+	dev_info(phy->dev, "qusb_phy_set_mode, usb_otg_mode=%d\n", mode);
+
+	qphy->phy.otg_mode = mode;
+	return 0;
+}
+#endif
 
 static int qusb_phy_notify_disconnect(struct usb_phy *phy,
 					enum usb_device_speed speed)
@@ -1181,17 +1203,6 @@ static int qusb_phy_probe(struct platform_device *pdev)
 				res->start, resource_size(res));
 		if (IS_ERR(qphy->tcsr_phy_clk_scheme_sel))
 			dev_dbg(dev, "err reading tcsr_phy_clk_scheme_sel\n");
-	}
-
-	res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
-			"tcsr_phy_level_shift_keeper");
-	if (res) {
-		qphy->tcsr_phy_lvl_shift_keeper = devm_ioremap_nocache(dev,
-				res->start, resource_size(res));
-		if (IS_ERR(qphy->tcsr_phy_lvl_shift_keeper)) {
-			dev_err(dev, "err reading tcsr_phy_lvl_shift_keeper\n");
-			qphy->tcsr_phy_lvl_shift_keeper = NULL;
-		}
 	}
 
 	qphy->dpdm_pulsing_enabled = of_property_read_bool(dev->of_node,
@@ -1329,7 +1340,28 @@ static int qusb_phy_probe(struct platform_device *pdev)
 			dev_err(dev, "error allocating memory for phy_init_seq\n");
 		}
 	}
+#ifdef CONFIG_USB_HOST_NOTIFY
+	of_get_property(dev->of_node, "qcom,qusb-phy-init-seq-host", &size);
+	if (size) {
+		qphy->qusb_phy_init_seq_host = devm_kzalloc(dev,
+						size, GFP_KERNEL);
+		if (qphy->qusb_phy_init_seq_host) {
+			qphy->init_seq_len_host =
+				(size / sizeof(*qphy->qusb_phy_init_seq_host));
+			if (qphy->init_seq_len_host % 2) {
+				dev_err(dev, "invalid init_seq_len\n");
+				return -EINVAL;
+			}
 
+			of_property_read_u32_array(dev->of_node,
+				"qcom,qusb-phy-init-seq-host",
+				qphy->qusb_phy_init_seq_host,
+				qphy->init_seq_len_host);
+		} else {
+			dev_err(dev, "error allocating memory for phy_init_seq\n");
+		}
+	}
+#endif
 	qphy->ulpi_mode = false;
 	ret = of_property_read_string(dev->of_node, "phy_type", &phy_type);
 
@@ -1382,6 +1414,10 @@ static int qusb_phy_probe(struct platform_device *pdev)
 		qphy->phy.notify_connect        = qusb_phy_notify_connect;
 		qphy->phy.notify_disconnect     = qusb_phy_notify_disconnect;
 	}
+
+#ifdef CONFIG_USB_HOST_NOTIFY
+	qphy->phy.set_mode		= qusb_phy_set_mode;
+#endif
 
 	/*
 	 * On some platforms multiple QUSB PHYs are available. If QUSB PHY is

@@ -80,10 +80,10 @@ static struct bin_attribute attr_data = {
 };
 
 static struct device_attribute attrs[] = {
-	__ATTR(open, S_IWUSR | S_IWGRP,
+	__ATTR(open, S_IWUSR,
 			NULL,
 			rmidev_sysfs_open_store),
-	__ATTR(release, S_IWUSR | S_IWGRP,
+	__ATTR(release, S_IWUSR,
 			NULL,
 			rmidev_sysfs_release_store),
 	__ATTR(attn_state, S_IRUGO,
@@ -381,6 +381,7 @@ static ssize_t rmidev_read(struct file *filp, char __user *buf,
 
 clean_up:
 	mutex_unlock(&(dev_data->file_mutex));
+
 	kfree(tmpbuf);
 	return retval;
 }
@@ -419,6 +420,7 @@ static ssize_t rmidev_write(struct file *filp, const char __user *buf,
 		kfree(tmpbuf);
 		return -EFAULT;
 	}
+
 	mutex_lock(&(dev_data->file_mutex));
 
 	retval = synaptics_rmi4_reg_write(rmidev->rmi4_data,
@@ -429,6 +431,7 @@ static ssize_t rmidev_write(struct file *filp, const char __user *buf,
 		*f_pos += retval;
 
 	mutex_unlock(&(dev_data->file_mutex));
+
 	kfree(tmpbuf);
 	return retval;
 }

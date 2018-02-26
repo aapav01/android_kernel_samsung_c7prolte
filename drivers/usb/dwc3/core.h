@@ -34,6 +34,9 @@
 #include <linux/usb/otg.h>
 
 #include <linux/phy/phy.h>
+#ifdef CONFIG_USB_CHARGING_EVENT
+#include <linux/battery/sec_charging_common.h>
+#endif
 
 #define DWC3_MSG_MAX	500
 
@@ -190,6 +193,7 @@
 /* Host waits for DTCT value before timeout. Recommended to be POR value */
 #define DWC3_GUCTL_DTCT(n) ((n) << 9)
 #define DWC3_GUCTL_DTCT_MASK (2 << 9)
+#define DWC3_GUCTL_SPRSCRTLTRANSEN (1 << 17)
 
 /* Global Debug LTSSM Register */
 #define DWC3_GDBGLTSSM_LINKSTATE_MASK	(0xF << 22)
@@ -975,7 +979,6 @@ struct dwc3 {
 	int			irq;
 	struct tasklet_struct	bh;
 	unsigned long		irq_cnt;
-	unsigned long		ep_cmd_timeout_cnt;
 	unsigned                bh_completion_time[MAX_INTR_STATS];
 	unsigned                bh_handled_evt_cnt[MAX_INTR_STATS];
 	unsigned                bh_dbg_index;
@@ -987,6 +990,10 @@ struct dwc3 {
 
 	wait_queue_head_t	wait_linkstate;
 	void			*dwc_ipc_log_ctxt;
+#if IS_ENABLED(CONFIG_USB_CHARGING_EVENT)
+	struct work_struct      set_vbus_current_work;
+	int			vbus_current; /* 0 : 100mA, 1 : 500mA, 2: 900mA */
+#endif
 };
 
 /* -------------------------------------------------------------------------- */

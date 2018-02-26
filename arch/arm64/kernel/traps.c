@@ -32,6 +32,7 @@
 #include <linux/syscalls.h>
 
 #include <asm/atomic.h>
+#include <asm/barrier.h>
 #include <asm/debug-monitors.h>
 #include <asm/traps.h>
 #include <asm/stacktrace.h>
@@ -39,6 +40,9 @@
 #include <asm/system_misc.h>
 #include <asm/esr.h>
 #include <asm/edac.h>
+
+#include <linux/sec_debug.h>
+#include <linux/sec_debug_summary.h>
 
 #include <trace/events/exception.h>
 
@@ -209,6 +213,17 @@ static int __die(const char *str, int err, struct thread_info *thread,
 		 TASK_COMM_LEN, tsk->comm, task_pid_nr(tsk), thread + 1);
 
 	if (!user_mode(regs) || in_interrupt()) {
+#ifdef CONFIG_SEC_DEBUG
+		if (THREAD_SIZE + (unsigned long)task_stack_page(tsk) - regs->sp
+			> THREAD_SIZE) {
+			dump_mem(KERN_EMERG, "Stack: ", regs->sp,
+					THREAD_SIZE/4 + regs->sp);
+		} else {
+			dump_mem(KERN_EMERG, "Stack: ", regs->sp,
+					THREAD_SIZE + (unsigned long)task_stack_page(tsk));
+		}
+#endif
+
 		dump_backtrace(regs, tsk);
 		dump_instr(KERN_EMERG, regs);
 	}
@@ -226,6 +241,7 @@ static unsigned long oops_begin(void)
 	unsigned long flags;
 
 	oops_enter();
+	secdbg_sched_msg("!!die!!");
 
 	/* racy, but better than risking deadlock. */
 	raw_local_irq_save(flags);
@@ -280,6 +296,8 @@ void die(const char *str, struct pt_regs *regs, int err)
 		bug_type = report_bug(regs->pc, regs);
 	if (bug_type != BUG_TRAP_TYPE_NONE)
 		str = "Oops - BUG";
+
+	sec_debug_save_die_info(str, regs);
 
 	ret = __die(str, err, thread, regs);
 
@@ -400,6 +418,38 @@ asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 	info.si_addr  = pc;
 
 	arm64_notify_die("Oops - undefined instruction", regs, &info, 0);
+}
+
+static void cntvct_read_handler(unsigned int esr, struct pt_regs *regs)
+{
+	int rt = (esr & ESR_ELx_SYS64_ISS_RT_MASK) >> ESR_ELx_SYS64_ISS_RT_SHIFT;
+
+	isb();
+	if (rt != 31)
+		regs->regs[rt] = arch_counter_get_cntvct();
+	regs->pc += 4;
+}
+
+static void cntfrq_read_handler(unsigned int esr, struct pt_regs *regs)
+{
+	int rt = (esr & ESR_ELx_SYS64_ISS_RT_MASK) >> ESR_ELx_SYS64_ISS_RT_SHIFT;
+
+	if (rt != 31)
+		asm volatile("mrs %0, cntfrq_el0" : "=r" (regs->regs[rt]));
+	regs->pc += 4;
+}
+
+asmlinkage void __exception do_sysinstr(unsigned int esr, struct pt_regs *regs)
+{
+	if ((esr & ESR_ELx_SYS64_ISS_SYS_OP_MASK) == ESR_ELx_SYS64_ISS_SYS_CNTVCT) {
+		cntvct_read_handler(esr, regs);
+		return;
+	} else if ((esr & ESR_ELx_SYS64_ISS_SYS_OP_MASK) == ESR_ELx_SYS64_ISS_SYS_CNTFRQ) {
+		cntfrq_read_handler(esr, regs);
+		return;
+	}
+
+	do_undefinstr(regs);
 }
 
 long compat_arm_syscall(struct pt_regs *regs);
