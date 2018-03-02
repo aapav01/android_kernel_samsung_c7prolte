@@ -3325,10 +3325,8 @@ static void tcp_send_challenge_ack(struct sock *sk)
 	/* unprotected vars, we dont care of overwrites */
 	static u32 challenge_timestamp;
 	static unsigned int challenge_count;
-	u32 count, now;
+	u32 count, now = jiffies / HZ;
 
-	/* Check host-wide RFC 5961 rate limit. */
-	now = jiffies / HZ;
 	if (now != challenge_timestamp) {
 		u32 half = (sysctl_tcp_challenge_ack_limit + 1) >> 1;
 
@@ -4969,7 +4967,7 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 		err = skb_copy_datagram_iovec(skb, hlen, tp->ucopy.iov, chunk);
 	else
 		err = skb_copy_and_csum_datagram_iovec(skb, hlen,
-						       tp->ucopy.iov);
+						       tp->ucopy.iov, chunk);
 
 	if (!err) {
 		tp->ucopy.len -= chunk;

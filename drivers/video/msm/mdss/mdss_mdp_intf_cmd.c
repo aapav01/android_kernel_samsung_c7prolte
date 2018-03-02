@@ -21,6 +21,9 @@
 #include "mdss_debug.h"
 #include "mdss_mdp_trace.h"
 #include "mdss_dsi_clk.h"
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+#include "samsung/ss_dsi_panel_common.h"
+#endif
 
 #define MAX_RECOVERY_TRIALS 10
 #define MAX_SESSIONS 2
@@ -1025,7 +1028,7 @@ static int mdss_mdp_cmd_wait4readptr(struct mdss_mdp_cmd_ctx *ctx)
 	return rc;
 }
 
-static int mdss_mdp_cmd_intf_callback(void *data, int event)
+static void mdss_mdp_cmd_intf_callback(void *data, int event)
 {
 	struct mdss_mdp_cmd_ctx *ctx = data;
 	struct mdss_mdp_pp_tear_check *te = NULL;
@@ -1034,11 +1037,11 @@ static int mdss_mdp_cmd_intf_callback(void *data, int event)
 
 	if (!data) {
 		pr_err("%s: invalid ctx\n", __func__);
-		return -EINVAL;
+		return;
 	}
 
 	if (!ctx->ctl)
-		return -EINVAL;
+		return;
 
 	switch (event) {
 	case MDP_INTF_CALLBACK_DSI_WAIT:
@@ -1050,7 +1053,7 @@ static int mdss_mdp_cmd_intf_callback(void *data, int event)
 		 * just return
 		 */
 		if (ctx->intf_stopped || !is_pingpong_split(ctx->ctl->mfd))
-			return -EINVAL;
+			return;
 		atomic_inc(&ctx->rdptr_cnt);
 
 		/* enable clks and rd_ptr interrupt */
@@ -1059,7 +1062,7 @@ static int mdss_mdp_cmd_intf_callback(void *data, int event)
 		mixer = mdss_mdp_mixer_get(ctx->ctl, MDSS_MDP_MIXER_MUX_LEFT);
 		if (!mixer) {
 			pr_err("%s: null mixer\n", __func__);
-			return -EINVAL;
+			return;
 		}
 
 		/* wait for read pointer */
@@ -1083,7 +1086,6 @@ static int mdss_mdp_cmd_intf_callback(void *data, int event)
 		pr_debug("%s: unhandled event=%d\n", __func__, event);
 		break;
 	}
-	return 0;
 }
 
 static void mdss_mdp_cmd_lineptr_done(void *arg)
@@ -1109,7 +1111,7 @@ static void mdss_mdp_cmd_lineptr_done(void *arg)
 	spin_unlock(&ctx->clk_lock);
 }
 
-static int mdss_mdp_cmd_intf_recovery(void *data, int event)
+static void mdss_mdp_cmd_intf_recovery(void *data, int event)
 {
 	struct mdss_mdp_cmd_ctx *ctx = data;
 	unsigned long flags;
@@ -1117,11 +1119,11 @@ static int mdss_mdp_cmd_intf_recovery(void *data, int event)
 
 	if (!data) {
 		pr_err("%s: invalid ctx\n", __func__);
-		return -EINVAL;
+		return;
 	}
 
 	if (!ctx->ctl)
-		return -EINVAL;
+		return;
 
 	/*
 	 * Currently, only intf_fifo_underflow is
@@ -1131,7 +1133,7 @@ static int mdss_mdp_cmd_intf_recovery(void *data, int event)
 	if (event != MDP_INTF_DSI_CMD_FIFO_UNDERFLOW) {
 		pr_warn("%s: unsupported recovery event:%d\n",
 					__func__, event);
-		return -EPERM;
+		return;
 	}
 
 	if (atomic_read(&ctx->koff_cnt)) {
@@ -1155,7 +1157,6 @@ static int mdss_mdp_cmd_intf_recovery(void *data, int event)
 	if (notify_frame_timeout)
 		mdss_mdp_ctl_notify(ctx->ctl, MDP_NOTIFY_FRAME_TIMEOUT);
 
-	return 0;
 }
 
 static void mdss_mdp_cmd_pingpong_done(void *arg)
@@ -1848,6 +1849,12 @@ int mdss_mdp_cmd_reconfigure_splash_done(struct mdss_mdp_ctl *ctl,
 
 	clk_ctrl.state = MDSS_DSI_CLK_OFF;
 	clk_ctrl.client = DSI_CLK_REQ_MDP_CLIENT;
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	/* Turning off mdp to re-initialize the mdp */
+	mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_BLANK, NULL, false);
+#endif
+
 	if (sctl) {
 		u32 flags = CTL_INTF_EVENT_FLAG_SKIP_BROADCAST;
 
@@ -1862,6 +1869,12 @@ int mdss_mdp_cmd_reconfigure_splash_done(struct mdss_mdp_ctl *ctl,
 		(void *)&clk_ctrl, CTL_INTF_EVENT_FLAG_SKIP_BROADCAST);
 
 	pdata->panel_info.cont_splash_enabled = 0;
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	/* Turning off panel to initialize panel init-seq at kick-off*/
+	mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_PANEL_OFF, NULL, false);
+#endif
+
 	if (sctl)
 		sctl->panel_data->panel_info.cont_splash_enabled = 0;
 	else if (pdata->next && is_pingpong_split(ctl->mfd))
@@ -1876,6 +1889,9 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 	struct mdss_panel_data *pdata;
 	unsigned long flags;
 	int rc = 0;
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	struct samsung_display_driver_data *vdd = samsung_get_vdd();
+#endif
 
 	ctx = (struct mdss_mdp_cmd_ctx *) ctl->intf_ctx[MASTER_CTX];
 	if (!ctx) {
@@ -1925,10 +1941,16 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 				ctl->num, rc, ctx->pp_timeout_report_cnt,
 				atomic_read(&ctx->koff_cnt));
 		if (ctx->pp_timeout_report_cnt == 0) {
-			MDSS_XLOG(0xbad);
-			MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl", "dsi0_phy",
-				"dsi1_ctrl", "dsi1_phy", "vbif", "vbif_nrt",
-				"dbg_bus", "vbif_dbg_bus", "panic");
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+			if (vdd->debug_data->panic_on_pptimeout) {
+				WARN(1, "cmd kickoff timed out (%d) ctl=%d\n", rc, ctl->num);
+				MDSS_XLOG(0xbad);
+				MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl", "dsi0_phy",
+						"dsi1_ctrl", "dsi1_phy", "vbif", "vbif_nrt",
+						"dbg_bus", "vbif_dbg_bus", "panic");
+			} else
+#endif
+			pr_err("cmd kickoff timed out (%d) ctl=%d\n", rc, ctl->num);
 		} else if (ctx->pp_timeout_report_cnt == MAX_RECOVERY_TRIALS) {
 			MDSS_XLOG(0xbad2);
 			MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl", "dsi0_phy",
@@ -2179,7 +2201,6 @@ int mdss_mdp_cmd_set_autorefresh_mode(struct mdss_mdp_ctl *mctl, int frame_cnt)
 		 */
 		ctx->autorefresh_state = MDP_AUTOREFRESH_ON_REQUESTED;
 		ctx->autorefresh_frame_cnt = frame_cnt;
-		mctl->mdata->serialize_wait4pp = true;
 
 		/* Cancel GATE Work Item */
 		if (cancel_work_sync(&ctx->gate_clk_work))
@@ -2193,10 +2214,8 @@ int mdss_mdp_cmd_set_autorefresh_mode(struct mdss_mdp_ctl *mctl, int frame_cnt)
 		if (frame_cnt == 0) {
 			ctx->autorefresh_state = MDP_AUTOREFRESH_OFF;
 			ctx->autorefresh_frame_cnt = 0;
-			mctl->mdata->serialize_wait4pp = false;
 		} else {
 			ctx->autorefresh_frame_cnt = frame_cnt;
-			mctl->mdata->serialize_wait4pp = true;
 		}
 		break;
 	case MDP_AUTOREFRESH_ON:
@@ -2208,7 +2227,6 @@ int mdss_mdp_cmd_set_autorefresh_mode(struct mdss_mdp_ctl *mctl, int frame_cnt)
 			ctx->autorefresh_state = MDP_AUTOREFRESH_OFF_REQUESTED;
 		} else {
 			ctx->autorefresh_frame_cnt = frame_cnt;
-			mctl->mdata->serialize_wait4pp = true;
 		}
 		break;
 	case MDP_AUTOREFRESH_OFF_REQUESTED:
@@ -2218,7 +2236,6 @@ int mdss_mdp_cmd_set_autorefresh_mode(struct mdss_mdp_ctl *mctl, int frame_cnt)
 			pr_debug("cancelling autorefresh off request\n");
 			ctx->autorefresh_state = MDP_AUTOREFRESH_ON;
 			ctx->autorefresh_frame_cnt = frame_cnt;
-			mctl->mdata->serialize_wait4pp = true;
 		}
 		break;
 	default:
@@ -2329,7 +2346,7 @@ static void mdss_mdp_cmd_wait4_autorefresh_pp(struct mdss_mdp_ctl *ctl)
 
 	MDSS_XLOG(ctl->num, line_out, ctl->mixer_left->roi.h);
 
-	if ((line_out < ctl->mixer_left->roi.h) && line_out) {
+	if (line_out < ctl->mixer_left->roi.h) {
 		reinit_completion(&ctx->autorefresh_ppdone);
 
 		/* enable ping pong done */
@@ -2581,7 +2598,6 @@ static int mdss_mdp_disable_autorefresh(struct mdss_mdp_ctl *ctl,
 	mdss_mdp_pingpong_write(pp_base,
 				MDSS_MDP_REG_PP_SYNC_CONFIG_VSYNC, cfg);
 
-	ctl->mdata->serialize_wait4pp = false;
 	return 0;
 }
 
@@ -2704,6 +2720,12 @@ static int mdss_mdp_cmd_kickoff(struct mdss_mdp_ctl *ctl, void *arg)
 	if (!ctl->is_master)
 		mctl = mdss_mdp_get_main_ctl(ctl);
 	mdss_mdp_cmd_dsc_reconfig(mctl);
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	/* send recovery pck before sending image date (for ESD recovery) */
+	mdss_mdp_ctl_intf_event(ctl, MDSS_SAMSUNG_EVENT_PANEL_ESD_RECOVERY,
+		NULL, CTL_INTF_EVENT_FLAG_SKIP_BROADCAST);
+#endif
 
 	mdss_mdp_cmd_set_partial_roi(ctl);
 
@@ -2874,8 +2896,6 @@ int mdss_mdp_cmd_ctx_stop(struct mdss_mdp_ctl *ctl,
 		ctx->default_pp_num, NULL, NULL);
 
 	memset(ctx, 0, sizeof(*ctx));
-	/* intf stopped,  no more kickoff */
-	ctx->intf_stopped = 1;
 
 	return 0;
 }
@@ -3018,11 +3038,7 @@ int mdss_mdp_cmd_stop(struct mdss_mdp_ctl *ctl, int panel_power_state)
 			ctx->intf_stopped = 0;
 			if (sctx)
 				sctx->intf_stopped = 0;
-			/*
-			 * Tearcheck was disabled while entering LP2 state.
-			 * Enable it back to allow updates in LP1 state.
-			 */
-			mdss_mdp_tearcheck_enable(ctl, true);
+
 			goto end;
 		}
 	}

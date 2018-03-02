@@ -1142,7 +1142,7 @@ static void gbam_notify(void *p, int event, unsigned long data)
 		break;
 	case BAM_DMUX_TRANSMIT_SIZE:
 		d = &port->data_ch;
-		if (test_bit(BAM_CH_OPENED, &d->flags))
+		if (d && test_bit(BAM_CH_OPENED, &d->flags))
 			pr_warn("%s, BAM channel opened already", __func__);
 		bam_mux_rx_req_size = data;
 		pr_debug("%s rx_req_size: %lu", __func__, bam_mux_rx_req_size);
@@ -1385,6 +1385,7 @@ static void gbam2bam_connect_work(struct work_struct *w)
 	spin_unlock_irqrestore(&port->port_lock, flags);
 	usb_bam_alloc_fifos(d->usb_bam_type, d->src_connection_idx);
 	usb_bam_alloc_fifos(d->usb_bam_type, d->dst_connection_idx);
+	gadget->bam2bam_func_enabled = true;
 
 	spin_lock_irqsave(&port->port_lock, flags);
 	/* check if USB cable is disconnected or not */
@@ -2352,12 +2353,6 @@ int gbam_connect(struct grmnet *gr, u8 port_num,
 exit:
 	spin_unlock_irqrestore(&port->port_lock, flags);
 	return ret;
-}
-
-void gbam_data_flush_workqueue(void)
-{
-	pr_debug("%s(): Flushing workqueue\n", __func__);
-	flush_workqueue(gbam_wq);
 }
 
 int gbam_setup(unsigned int no_bam_port)

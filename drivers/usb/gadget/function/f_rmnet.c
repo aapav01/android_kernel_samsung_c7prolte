@@ -83,8 +83,13 @@ static struct usb_interface_descriptor rmnet_interface_desc = {
 	.bDescriptorType =	USB_DT_INTERFACE,
 	.bNumEndpoints =	3,
 	.bInterfaceClass =	USB_CLASS_VENDOR_SPEC,
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+	.bInterfaceSubClass =	0xE0,
+	.bInterfaceProtocol =	0x01,
+#else
 	.bInterfaceSubClass =	USB_CLASS_VENDOR_SPEC,
 	.bInterfaceProtocol =	USB_CLASS_VENDOR_SPEC,
+#endif
 	/* .iInterface = DYNAMIC */
 };
 
@@ -553,7 +558,6 @@ static int gport_rmnet_disconnect(struct f_rmnet *dev)
 static void frmnet_unbind(struct usb_configuration *c, struct usb_function *f)
 {
 	struct f_rmnet *dev = func_to_rmnet(f);
-	enum transport_type	dxport = rmnet_ports[dev->port_num].data_xport;
 
 	pr_debug("%s: portno:%d\n", __func__, dev->port_num);
 	if (gadget_is_superspeed(c->cdev->gadget))
@@ -563,10 +567,7 @@ static void frmnet_unbind(struct usb_configuration *c, struct usb_function *f)
 	usb_free_descriptors(f->fs_descriptors);
 
 	frmnet_free_req(dev->notify, dev->notify_req);
-	if (dxport == USB_GADGET_XPORT_BAM2BAM_IPA) {
-		gbam_data_flush_workqueue();
-		c->cdev->gadget->bam2bam_func_enabled = false;
-	}
+
 	kfree(f->name);
 }
 
@@ -1322,9 +1323,6 @@ static int frmnet_bind_config(struct usb_configuration *c, unsigned portno)
 		kfree(f->name);
 		return status;
 	}
-	if (rmnet_ports[portno].data_xport ==
-			USB_GADGET_XPORT_BAM2BAM_IPA)
-		c->cdev->gadget->bam2bam_func_enabled = true;
 
 	pr_debug("%s: complete\n", __func__);
 

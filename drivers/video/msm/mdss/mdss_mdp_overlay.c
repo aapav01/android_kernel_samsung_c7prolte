@@ -28,6 +28,10 @@
 #include <linux/sw_sync.h>
 #include <linux/kmemleak.h>
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+#include "../../../video/msm/mdss/samsung/ss_dsi_panel_common.h" /* UTIL HEADER */
+#endif
+
 #include <soc/qcom/event_timer.h>
 #include <linux/msm-bus.h>
 #include "mdss.h"
@@ -985,6 +989,24 @@ skip_reconfigure:
 
 	mdss_mdp_pipe_unmap(pipe);
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	pr_debug("L_mixer:%d R_mixer:%d %s z:%d format:%d flag:0x%x src.x:%d y:%d w:%d h:%d "
+			"des_rect.x:%d y:%d w:%d h:%d mdss\n",
+			pipe->mixer_left ? pipe->mixer_left->num : -1,
+			pipe->mixer_right? pipe->mixer_right->num : -1,
+			pipe->ndx == BIT(0) ? "VG0" : pipe->ndx == BIT(1) ? "VG1" :
+			pipe->ndx == BIT(2) ? "VG2" : pipe->ndx == BIT(3) ? "RGB0" :
+			pipe->ndx == BIT(4) ? "RGB1" : pipe->ndx == BIT(5) ? "RGB2" :
+			pipe->ndx == BIT(6) ? "DMA0" : pipe->ndx == BIT(7) ? "DMA1":
+			pipe->ndx == BIT(8) ? "VG3" : pipe->ndx == BIT(9) ? "RGB3":
+			pipe->ndx == BIT(10) ? "CURSOR0" : pipe->ndx == BIT(11) ? "CURSOR1" : "MAX_SSPP",
+			pipe->mixer_stage - MDSS_MDP_STAGE_0,
+			pipe->src_fmt->format,
+			pipe->flags,
+			pipe->src.x, pipe->src.y, pipe->src.w, pipe->src.h,
+			pipe->dst.x, pipe->dst.y, pipe->dst.w, pipe->dst.h);
+#endif
+
 	return ret;
 exit_fail:
 	mdss_mdp_pipe_unmap(pipe);
@@ -1585,6 +1607,24 @@ static int __overlay_queue_pipes(struct msm_fb_data_type *mfd)
 			if (buf)
 				__pipe_buf_mark_cleanup(mfd, buf);
 		}
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+		pr_debug("L_mixer:%d R_mixer:%d %s z:%d format:%d flag:0x%x src.x:%d y:%d w:%d h:%d "
+			"des_rect.x:%d y:%d w:%d h:%d mdss\n",
+			pipe->mixer_left ? pipe->mixer_left->num : -1,
+			pipe->mixer_right? pipe->mixer_right->num : -1,
+			pipe->ndx == BIT(0) ? "VG0" : pipe->ndx == BIT(1) ? "VG1" :
+			pipe->ndx == BIT(2) ? "VG2" : pipe->ndx == BIT(3) ? "RGB0" :
+			pipe->ndx == BIT(4) ? "RGB1" : pipe->ndx == BIT(5) ? "RGB2" :
+			pipe->ndx == BIT(6) ? "DMA0" : pipe->ndx == BIT(7) ? "DMA1":
+			pipe->ndx == BIT(8) ? "VG3" : pipe->ndx == BIT(9) ? "RGB3":
+			pipe->ndx == BIT(10) ? "CURSOR0" : pipe->ndx == BIT(11) ? "CURSOR1" : "MAX_SSPP",
+			pipe->mixer_stage - MDSS_MDP_STAGE_0,
+			pipe->src_fmt->format,
+			pipe->flags,
+			pipe->src.x, pipe->src.y, pipe->src.w, pipe->src.h,
+			pipe->dst.x, pipe->dst.y, pipe->dst.w, pipe->dst.h);
+#endif
 	}
 
 	return 0;
@@ -1959,42 +1999,6 @@ set_roi:
 	mdss_mdp_set_roi(ctl, &l_roi, &r_roi);
 }
 
-static int __config_secure_display(struct mdss_overlay_private *mdp5_data)
-{
-	int panel_type = mdp5_data->ctl->panel_data->panel_info.type;
-	int sd_enable = -1; /* Since 0 is a valid state, initialize with -1 */
-	int ret = 0;
-
-	if (panel_type == MIPI_CMD_PANEL)
-		mdss_mdp_display_wait4pingpong(mdp5_data->ctl, true);
-
-	/*
-	 * Start secure display session if we are transitioning from non secure
-	 * to secure display.
-	 */
-	if (mdp5_data->sd_transition_state ==
-			SD_TRANSITION_NON_SECURE_TO_SECURE)
-		sd_enable = 1;
-
-	/*
-	 * For command mode panels, if we are trasitioning from secure to
-	 * non secure session, disable the secure display, as we've already
-	 * waited for the previous frame transfer.
-	 */
-	if ((panel_type == MIPI_CMD_PANEL) &&
-			(mdp5_data->sd_transition_state ==
-			 SD_TRANSITION_SECURE_TO_NON_SECURE))
-		sd_enable = 0;
-
-	if (sd_enable != -1) {
-		ret = mdss_mdp_secure_display_ctrl(mdp5_data->mdata, sd_enable);
-		if (!ret)
-			mdp5_data->sd_enabled = sd_enable;
-	}
-
-	return ret;
-}
-
 int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 				struct mdp_display_commit *data)
 {
@@ -2002,6 +2006,7 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 	struct mdss_mdp_pipe *pipe, *tmp;
 	struct mdss_mdp_ctl *ctl = mfd_to_ctl(mfd);
 	int ret = 0;
+	int sd_in_pipe = 0;
 	struct mdss_mdp_commit_cb commit_cb;
 
 	if (!ctl)
@@ -2034,6 +2039,30 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 	}
 	mutex_lock(&mdp5_data->list_lock);
 
+	/*
+	 * check if there is a secure display session
+	 */
+	list_for_each_entry(pipe, &mdp5_data->pipes_used, list) {
+		if (pipe->flags & MDP_SECURE_DISPLAY_OVERLAY_SESSION) {
+			sd_in_pipe = 1;
+			pr_debug("Secure pipe: %u : %08X\n",
+					pipe->num, pipe->flags);
+		}
+	}
+
+	/*
+	 * start secure display session if there is secure display session and
+	 * sd_enabled is not true.
+	 */
+	if (!mdp5_data->sd_enabled && sd_in_pipe) {
+		if (!mdss_get_sd_client_cnt())
+			ret = mdss_mdp_secure_display_ctrl(1);
+		if (!ret) {
+			mdp5_data->sd_enabled = 1;
+			mdss_update_sd_client(mdp5_data->mdata, true);
+		}
+	}
+
 	if (!ctl->shared_lock)
 		mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_BEGIN);
 
@@ -2045,14 +2074,6 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 
 	if (ctl->ops.wait_pingpong && mdp5_data->mdata->serialize_wait4pp)
 		mdss_mdp_display_wait4pingpong(ctl, true);
-
-	if (mdp5_data->sd_transition_state != SD_TRANSITION_NONE) {
-		ret = __config_secure_display(mdp5_data);
-		if (IS_ERR_VALUE(ret)) {
-			pr_err("Secure session config failed\n");
-			goto commit_fail;
-		}
-	}
 
 	/*
 	 * Setup pipe in solid fill before unstaging,
@@ -2130,17 +2151,25 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 
 	mutex_lock(&mdp5_data->ov_lock);
 	/*
-	 * If we are transitioning from secure to non-secure display,
-	 * disable the secure display.
+	 * If there is no secure display session and sd_enabled, disable the
+	 * secure display session
 	 */
-	if (mdp5_data->sd_enabled && (mdp5_data->sd_transition_state ==
-			SD_TRANSITION_SECURE_TO_NON_SECURE)) {
-		ret = mdss_mdp_secure_display_ctrl(mdp5_data->mdata, 0);
-		if (!ret)
+	if (mdp5_data->sd_enabled && !sd_in_pipe && !ret) {
+		/* disable the secure display on last client */
+		if (mdss_get_sd_client_cnt() == 1)
+			ret = mdss_mdp_secure_display_ctrl(0);
+		if (!ret) {
+			mdss_update_sd_client(mdp5_data->mdata, false);
 			mdp5_data->sd_enabled = 0;
+		}
 	}
 
 	mdss_fb_update_notify_update(mfd);
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	mdss_mdp_ctl_intf_event(mdp5_data->ctl, MDSS_SAMSUNG_EVENT_FRAME_UPDATE, NULL, false);
+#endif
+
 commit_fail:
 	ATRACE_BEGIN("overlay_cleanup");
 	mdss_mdp_overlay_cleanup(mfd, &mdp5_data->pipes_destroy);
@@ -3865,6 +3894,12 @@ static int mdss_mdp_hw_cursor_pipe_update(struct msm_fb_data_type *mfd,
 	req->transp_mask = img->bg_color & ~(0xff << var->transp.offset);
 
 	if (mfd->cursor_buf && (cursor->set & FB_CUR_SETIMAGE)) {
+		if (img->width * img->height * 4 > cursor_frame_size) {
+			pr_err("cursor image size is too large\n");
+			ret = -EINVAL;
+			goto done;
+		}
+
 		ret = copy_from_user(mfd->cursor_buf, img->data,
 				     img->width * img->height * 4);
 		if (ret) {
@@ -4331,12 +4366,16 @@ static int mdss_fb_get_metadata(struct msm_fb_data_type *mfd,
 		ret = mdss_fb_get_hw_caps(mfd, &metadata->data.caps);
 		break;
 	case metadata_op_get_ion_fd:
-		if (mfd->fb_ion_handle) {
+		if (mfd->fb_ion_handle && mfd->fb_ion_client) {
+			get_dma_buf(mfd->fbmem_buf);
 			metadata->data.fbmem_ionfd =
-				dma_buf_fd(mfd->fbmem_buf, 0);
-			if (metadata->data.fbmem_ionfd < 0)
+				ion_share_dma_buf_fd(mfd->fb_ion_client,
+					mfd->fb_ion_handle);
+			if (metadata->data.fbmem_ionfd < 0) {
+				dma_buf_put(mfd->fbmem_buf);
 				pr_err("fd allocation failed. fd = %d\n",
 						metadata->data.fbmem_ionfd);
+			}
 		}
 		break;
 	case metadata_op_crc:
@@ -4949,6 +4988,25 @@ static void mdss_mdp_set_lm_flag(struct msm_fb_data_type *mfd)
 	}
 }
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+struct samsung_display_driver_data* mdss_samsung_get_vdd(struct mdss_mdp_ctl *ctl)
+{
+	struct samsung_display_driver_data *vdd = NULL;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+
+	ctrl_pdata = container_of(ctl->panel_data, struct mdss_dsi_ctrl_pdata,
+				panel_data);
+
+	vdd = check_valid_ctrl(ctrl_pdata);
+	if (IS_ERR_OR_NULL(vdd)) {
+		pr_err("%s: Invalid data ctrl : 0x%zx\n", __func__, (size_t)vdd);
+		return NULL;
+	}
+
+	return vdd;
+}
+#endif
+
 static void mdss_mdp_handle_invalid_switch_state(struct msm_fb_data_type *mfd)
 {
 	int rc = 0;
@@ -5115,6 +5173,9 @@ static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd)
 	int need_cleanup;
 	int retire_cnt;
 	bool destroy_ctl = false;
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	struct samsung_display_driver_data *vdd = NULL;
+#endif
 
 	if (!mfd)
 		return -ENODEV;
@@ -5129,6 +5190,9 @@ static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd)
 		return -ENODEV;
 	}
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	vdd = mdss_samsung_get_vdd(mdp5_data->ctl);
+#endif
 	/*
 	 * Keep a reference to the runtime pm until the overlay is turned
 	 * off, and then release this last reference at the end. This will
@@ -5856,7 +5920,7 @@ static int mdss_mdp_scaler_lut_init(struct mdss_data_type *mdata,
 		struct mdp_scale_luts_info *lut_tbl)
 {
 	struct mdss_mdp_qseed3_lut_tbl *qseed3_lut_tbl;
-	int ret;
+	int ret = 0;
 
 	if (!mdata->scaler_off)
 		return -EFAULT;
