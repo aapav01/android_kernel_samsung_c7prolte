@@ -14,15 +14,13 @@
 /dts-v1/;
 
 #include "msm8920.dtsi"
-#include "msm8917-pmi8937-mtp.dtsi"
+#include "msm8920-pmi8940-qrd-sku7.dtsi"
 
 / {
-	model = "Qualcomm Technologies, Inc. MSM8920-PMI8937 MTP";
-	compatible = "qcom,msm8920-mtp", "qcom,msm8920", "qcom,mtp";
-	qcom,board-id= <8 0>;
-	qcom,pmic-id = <0x10019 0x020037 0x0 0x0>;
+	model = "Qualcomm Technologies, Inc. MSM8920-PMI8940 QRD SKU7";
+	compatible = "qcom,msm8920-qrd-sku7", "qcom,msm8920-qrd",
+		   "qcom,msm8920", "qcom,qrd";
+	qcom,board-id = <0x2000b 0>;
+	qcom,pmic-id = <0x10019 0x020040 0x0 0x0>;
 };
 
-&mem_client_3_size {
-	qcom,peripheral-size = <0x500000>;
-};
